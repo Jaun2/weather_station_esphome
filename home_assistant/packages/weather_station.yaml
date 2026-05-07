@@ -1,36 +1,62 @@
-# Weather Station — derived metric template sensors
+# Weather Station — Home Assistant package
 #
-# Computes dew point, heat index, frost point, fog probability, rain likelihood,
-# visibility class, and feels-like temperature from the BME280's raw readings
-# published by the ESPHome `weather-station` device.
+# Everything HA-side for the weather station lives in this one file:
+# template sensors, trend binary sensors, and (later) automations and
+# dashboard config. HA's `packages` feature merges this file's contents
+# into the main config, so you don't have to paste pieces into different
+# top-level sections of configuration.yaml.
 #
-# Source entities (from ESPHome native API auto-discovery):
+# ----------------------------------------------------------------------------
+# Drop-in instructions
+# ----------------------------------------------------------------------------
+#
+# 1. Place this file at:  /config/packages/weather_station.yaml
+#
+# 2. ONE-TIME setup if you don't already use packages — in configuration.yaml,
+#    add (or extend) the homeassistant block:
+#
+#      homeassistant:
+#        packages: !include_dir_named packages
+#
+# 3. Restart Home Assistant. From now on, any file you drop under
+#    /config/packages/ is auto-loaded — no further wiring needed.
+#
+# ----------------------------------------------------------------------------
+# Computed metrics
+# ----------------------------------------------------------------------------
+#
+# Seven derived sensors from the BME280's raw temperature, humidity, and
+# pressure published by the ESPHome `weather-station` device:
+#
+#   - Dew Point          (Magnus-Tetens, water saturation)
+#   - Heat Index         (Rothfusz regression; valid above 27 °C / 40 % RH)
+#   - Frost Point        (Magnus-Tetens, ice saturation; below 0 °C only)
+#   - Fog Probability    (heuristic from RH and dew-point spread)
+#   - Rain Likelihood    (heuristic from pressure trend, humidity trend, spread)
+#   - Visibility         (categorical: Fog / Mist / Haze / Clear)
+#   - Feels Like         (Australian Apparent Temperature, no-wind variant)
+#
+# Plus two trend binary sensors used as inputs to rain likelihood:
+#
+#   - Pressure Falling   (3-hour gradient, ~0.5 hPa/3h threshold)
+#   - Humidity Rising    (2-hour gradient, ~0.7 %/2h threshold)
+#
+# ----------------------------------------------------------------------------
+# Source entities (from ESPHome native API auto-discovery)
+# ----------------------------------------------------------------------------
+#
 #   sensor.weather_station_temperature   °C
 #   sensor.weather_station_humidity      % RH
 #   sensor.weather_station_pressure      hPa raw (~840 at 1500 m)
 #
-# This file has TWO sections that go in different parts of your HA config.
-# Easiest one-time setup:
-#   1. Drop this file into  /config/weather_station_templates.yaml
-#   2. In configuration.yaml, add (or extend) these top-level entries — the
-#      `!include` syntax doesn't span multiple top-level keys, so we paste
-#      each section directly:
+# ----------------------------------------------------------------------------
+# Heuristic caveats — read once, then trust the file
+# ----------------------------------------------------------------------------
 #
-#        template: !include weather_station_templates_template.yaml
-#        binary_sensor: !include weather_station_templates_binary.yaml
-#
-#      ...or simply paste Section 1 into your existing `template:` list and
-#      Section 2 into your existing `binary_sensor:` list.
-#
-# Heuristic caveats (write these into the file so they don't get forgotten):
 #   - Fog probability and rain likelihood are heuristics, not calibrated forecasts.
 #   - Visibility class overlaps with fog probability by design — alternative views.
 #   - Frost point only applies below 0 °C; reads `unknown` otherwise.
 #   - Feels-like with wind = 0 is conservative below ~10 °C; Stage 9 adds wind.
-
-# ============================================================================
-# Section 1 — template: sensors
-# ============================================================================
 
 template:
   - sensor:
@@ -169,13 +195,9 @@ template:
           {% endif %}
 
 
-# ============================================================================
-# Section 2 — binary_sensor: trend (inputs for rain likelihood)
-# ============================================================================
-#
-# Uses HA's built-in `trend` integration to detect pressure-falling and
-# humidity-rising over a multi-hour window. Output is `on`/`off` consumed
-# by the Rain Likelihood template above.
+# Trend inputs for rain likelihood. HA's built-in `trend` integration detects
+# pressure-falling and humidity-rising over a multi-hour window. Output is
+# `on`/`off` consumed by the Rain Likelihood template above.
 
 binary_sensor:
   - platform: trend
