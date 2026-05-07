@@ -64,7 +64,164 @@ sensor:
     update_interval: 10s
     temperature:
       name: "Temperature"
+      id: bme_temperature
     pressure:
       name: "Pressure"
+      id: bme_pressure
     humidity:
       name: "Humidity"
+      id: bme_humidity
+
+  # Trend gradients computed by HA's `statistics` integration (defined in the
+  # HA package). Subscribed back into the firmware so the rain likelihood
+  # lambda can use real change-rate values, not just rising/falling flags.
+  # `internal: true` keeps these out of HA — they're already in HA, no point
+  # in republishing them.
+  - platform: homeassistant
+    id: ha_pressure_trend
+    entity_id: sensor.weather_station_pressure_change_rate_3h
+    internal: true
+
+  - platform: homeassistant
+    id: ha_humidity_trend
+    entity_id: sensor.weather_station_humidity_change_rate_2h
+    internal: true
+
+  # Derived metrics — computed in firmware so they appear on the device card
+  # alongside Temperature/Humidity/Pressure. Lambdas reference the BME280's
+  # IDs above; declaration order matters for sensors that depend on dew_point
+  # (fog probability, rain likelihood, visibility text sensor).
+
+  - platform: template
+    name: "Dew Point"
+    id: dew_point
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      float t = id(bme_temperature).state;
+      float rh = id(bme_humidity).state;
+      if (isnan(t) || isnan(rh) || rh <= 0.0f) return NAN;
+      const float a = 17.625f;
+      const float b = 243.04f;
+      float alpha = (a * t) / (b + t) + log(rh / 100.0f);
+      return (b * alpha) / (a - alpha);
+
+  - platform: template
+    name: "Heat Index"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      float t = id(bme_temperature).state;
+      float rh = id(bme_humidity).state;
+      if (isnan(t) || isnan(rh)) return NAN;
+      // Rothfusz regression is only valid when T >= 27 C and RH >= 40 %.
+      // Outside that range, return T unchanged so the entity stays defined.
+      if (t < 27.0f || rh < 40.0f) return t;
+      float tf = t * 9.0f / 5.0f + 32.0f;
+      float hi_f = -42.379f
+                   + 2.04901523f * tf
+                   + 10.14333127f * rh
+                   - 0.22475541f * tf * rh
+                   - 0.00683783f * tf * tf
+                   - 0.05481717f * rh * rh
+                   + 0.00122874f * tf * tf * rh
+                   + 0.00085282f * tf * rh * rh
+                   - 0.00000199f * tf * tf * rh * rh;
+      return (hi_f - 32.0f) * 5.0f / 9.0f;
+
+  - platform: template
+    name: "Frost Point"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      float t = id(bme_temperature).state;
+      float rh = id(bme_humidity).state;
+      // Only meaningful below 0 C (saturation over ice). Otherwise leave
+      // the entity unknown so dashboards can hide it.
+      if (isnan(t) || isnan(rh) || rh <= 0.0f || t >= 0.0f) return NAN;
+      const float a = 22.587f;
+      const float b = 273.86f;
+      float alpha = (a * t) / (b + t) + log(rh / 100.0f);
+      return (b * alpha) / (a - alpha);
+
+  - platform: template
+    name: "Fog Probability"
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      float t = id(bme_temperature).state;
+      float rh = id(bme_humidity).state;
+      float td = id(dew_point).state;
+      if (isnan(t) || isnan(rh) || isnan(td)) return NAN;
+      float spread = std::max(0.0f, t - td);
+      float rh_frac = rh / 100.0f;
+      float score = (rh_frac * rh_frac) * std::max(0.0f, 100.0f - 25.0f * spread);
+      return std::min(100.0f, std::max(0.0f, score));
+
+  - platform: template
+    name: "Rain Likelihood"
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      float t = id(bme_temperature).state;
+      float td = id(dew_point).state;
+      float p_trend = id(ha_pressure_trend).state;  // hPa/sec
+      float h_trend = id(ha_humidity_trend).state;  // %/sec
+      if (isnan(t) || isnan(td)) return NAN;
+      float spread = std::max(0.0f, t - td);
+      float spread_score = std::max(0.0f,
+        std::min(33.0f, 33.0f * (1.0f - spread / 5.0f)));
+      // Map pressure fall rate onto 0..33: -0.0001 hPa/s (fast fall) -> 33,
+      // 0 (steady or rising) -> 0. NaN means HA hasn't pushed yet -> 0.
+      float p_score = isnan(p_trend) ? 0.0f
+        : std::max(0.0f, std::min(33.0f, -p_trend * 330000.0f));
+      // Map humidity rise rate onto 0..34: +0.0002 %/s (fast rise) -> 34,
+      // 0 (steady or falling) -> 0. NaN -> 0.
+      float h_score = isnan(h_trend) ? 0.0f
+        : std::max(0.0f, std::min(34.0f, h_trend * 170000.0f));
+      return p_score + h_score + spread_score;
+
+  - platform: template
+    name: "Feels Like"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      float t = id(bme_temperature).state;
+      float rh = id(bme_humidity).state;
+      if (isnan(t) || isnan(rh)) return NAN;
+      // Australian Apparent Temperature (Steadman / BOM), no-wind variant.
+      // Stage 9 will subtract 0.70*v once wind is available.
+      float es = 6.105f * exp(17.27f * t / (237.7f + t));
+      float e = (rh / 100.0f) * es;
+      return t + 0.33f * e - 4.00f;
+
+text_sensor:
+  - platform: template
+    name: "Visibility"
+    update_interval: 10s
+    lambda: |-
+      float t = id(bme_temperature).state;
+      float rh = id(bme_humidity).state;
+      float td = id(dew_point).state;
+      if (isnan(t) || isnan(rh) || isnan(td)) return std::string("unknown");
+      float spread = std::max(0.0f, t - td);
+      if (rh > 95.0f && spread < 1.0f) return std::string("Fog");
+      if (rh > 90.0f) return std::string("Mist");
+      if (rh > 80.0f) return std::string("Haze");
+      return std::string("Clear");

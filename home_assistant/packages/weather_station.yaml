@@ -1,10 +1,13 @@
 # Weather Station — Home Assistant package
 #
-# Everything HA-side for the weather station lives in this one file:
-# template sensors, trend binary sensors, and (later) automations and
-# dashboard config. HA's `packages` feature merges this file's contents
-# into the main config, so you don't have to paste pieces into different
-# top-level sections of configuration.yaml.
+# Slim package: derived metrics (dew point, heat index, frost point, fog
+# probability, rain likelihood, visibility, feels like) all live in the
+# ESPHome firmware now and appear on the device card.
+#
+# HA's only role is computing pressure & humidity trend rates from its
+# recorder history. The firmware subscribes to those values and uses them
+# as inputs to the rain likelihood lambda. The two `statistics` sensors
+# below are deliberately hidden from the UI — they're plumbing.
 #
 # ----------------------------------------------------------------------------
 # Drop-in instructions
@@ -19,200 +22,43 @@
 #        packages: !include_dir_named packages
 #
 # 3. Restart Home Assistant. From now on, any file you drop under
-#    /config/packages/ is auto-loaded — no further wiring needed.
+#    /config/packages/ is auto-loaded.
 #
 # ----------------------------------------------------------------------------
-# Computed metrics
+# What this gives the firmware
 # ----------------------------------------------------------------------------
 #
-# Seven derived sensors from the BME280's raw temperature, humidity, and
-# pressure published by the ESPHome `weather-station` device:
+#   sensor.weather_station_pressure_change_rate_3h    hPa/sec, hidden
+#   sensor.weather_station_humidity_change_rate_2h    %/sec, hidden
 #
-#   - Dew Point          (Magnus-Tetens, water saturation)
-#   - Heat Index         (Rothfusz regression; valid above 27 °C / 40 % RH)
-#   - Frost Point        (Magnus-Tetens, ice saturation; below 0 °C only)
-#   - Fog Probability    (heuristic from RH and dew-point spread)
-#   - Rain Likelihood    (heuristic from pressure trend, humidity trend, spread)
-#   - Visibility         (categorical: Fog / Mist / Haze / Clear)
-#   - Feels Like         (Australian Apparent Temperature, no-wind variant)
+# Both are subscribed by the ESPHome `weather-station` device via:
 #
-# Plus two trend binary sensors used as inputs to rain likelihood:
+#   sensor:
+#     - platform: homeassistant
+#       id: ha_pressure_trend
+#       entity_id: sensor.weather_station_pressure_change_rate_3h
+#       internal: true
 #
-#   - Pressure Falling   (3-hour gradient, ~0.5 hPa/3h threshold)
-#   - Humidity Rising    (2-hour gradient, ~0.7 %/2h threshold)
-#
-# ----------------------------------------------------------------------------
-# Source entities (from ESPHome native API auto-discovery)
-# ----------------------------------------------------------------------------
-#
-#   sensor.weather_station_temperature   °C
-#   sensor.weather_station_humidity      % RH
-#   sensor.weather_station_pressure      hPa raw (~840 at 1500 m)
-#
-# ----------------------------------------------------------------------------
-# Heuristic caveats — read once, then trust the file
-# ----------------------------------------------------------------------------
-#
-#   - Fog probability and rain likelihood are heuristics, not calibrated forecasts.
-#   - Visibility class overlaps with fog probability by design — alternative views.
-#   - Frost point only applies below 0 °C; reads `unknown` otherwise.
-#   - Feels-like with wind = 0 is conservative below ~10 °C; Stage 9 adds wind.
+# Used in the `Rain Likelihood` template sensor's lambda.
 
-template:
-  - sensor:
+sensor:
+  - platform: statistics
+    name: "Weather Station Pressure Change Rate 3h"
+    unique_id: weather_station_pressure_change_rate_3h
+    entity_id: sensor.weather_station_pressure
+    state_characteristic: change_rate
+    max_age:
+      hours: 3
+    sampling_size: 1500
+    # Hide from UI — internal plumbing for firmware-side rain likelihood.
+    entity_registry_enabled_default: false
 
-      - name: "Weather Station Dew Point"
-        unique_id: weather_station_dew_point
-        unit_of_measurement: "°C"
-        device_class: temperature
-        state_class: measurement
-        state: |
-          {% set t = states('sensor.weather_station_temperature') | float(none) %}
-          {% set rh = states('sensor.weather_station_humidity') | float(none) %}
-          {% if t is none or rh is none or rh <= 0 %}
-            unknown
-          {% else %}
-            {% set a = 17.625 %}
-            {% set b = 243.04 %}
-            {% set alpha = (a * t) / (b + t) + log(rh / 100) %}
-            {{ ((b * alpha) / (a - alpha)) | round(1) }}
-          {% endif %}
-
-      - name: "Weather Station Heat Index"
-        unique_id: weather_station_heat_index
-        unit_of_measurement: "°C"
-        device_class: temperature
-        state_class: measurement
-        state: |
-          {% set t = states('sensor.weather_station_temperature') | float(none) %}
-          {% set rh = states('sensor.weather_station_humidity') | float(none) %}
-          {% if t is none or rh is none %}
-            unknown
-          {% elif t < 27 or rh < 40 %}
-            {{ t | round(1) }}
-          {% else %}
-            {% set tf = t * 9 / 5 + 32 %}
-            {% set hi_f = -42.379
-                          + 2.04901523 * tf
-                          + 10.14333127 * rh
-                          - 0.22475541 * tf * rh
-                          - 0.00683783 * tf * tf
-                          - 0.05481717 * rh * rh
-                          + 0.00122874 * tf * tf * rh
-                          + 0.00085282 * tf * rh * rh
-                          - 0.00000199 * tf * tf * rh * rh %}
-            {{ ((hi_f - 32) * 5 / 9) | round(1) }}
-          {% endif %}
-
-      - name: "Weather Station Frost Point"
-        unique_id: weather_station_frost_point
-        unit_of_measurement: "°C"
-        device_class: temperature
-        state_class: measurement
-        state: |
-          {% set t = states('sensor.weather_station_temperature') | float(none) %}
-          {% set rh = states('sensor.weather_station_humidity') | float(none) %}
-          {% if t is none or rh is none or rh <= 0 or t >= 0 %}
-            unknown
-          {% else %}
-            {% set a = 22.587 %}
-            {% set b = 273.86 %}
-            {% set alpha = (a * t) / (b + t) + log(rh / 100) %}
-            {{ ((b * alpha) / (a - alpha)) | round(1) }}
-          {% endif %}
-
-      - name: "Weather Station Fog Probability"
-        unique_id: weather_station_fog_probability
-        unit_of_measurement: "%"
-        state_class: measurement
-        state: |
-          {% set t = states('sensor.weather_station_temperature') | float(none) %}
-          {% set rh = states('sensor.weather_station_humidity') | float(none) %}
-          {% set td = states('sensor.weather_station_dew_point') | float(none) %}
-          {% if t is none or rh is none or td is none %}
-            unknown
-          {% else %}
-            {% set spread = [0, t - td] | max %}
-            {% set rh_frac = rh / 100 %}
-            {% set score = (rh_frac * rh_frac) * ([0, 100 - 25 * spread] | max) %}
-            {{ [0, [100, score] | min] | max | round(0) }}
-          {% endif %}
-
-      - name: "Weather Station Rain Likelihood"
-        unique_id: weather_station_rain_likelihood
-        unit_of_measurement: "%"
-        state_class: measurement
-        state: |
-          {% set t = states('sensor.weather_station_temperature') | float(none) %}
-          {% set td = states('sensor.weather_station_dew_point') | float(none) %}
-          {% set p_falling = is_state('binary_sensor.weather_station_pressure_falling', 'on') %}
-          {% set h_rising = is_state('binary_sensor.weather_station_humidity_rising', 'on') %}
-          {% if t is none or td is none %}
-            unknown
-          {% else %}
-            {% set spread = [0, t - td] | max %}
-            {% set spread_score = [0, [33, 33 * (1 - spread / 5)] | min] | max %}
-            {% set p_score = 33 if p_falling else 0 %}
-            {% set h_score = 34 if h_rising else 0 %}
-            {{ (p_score + h_score + spread_score) | round(0) }}
-          {% endif %}
-
-      - name: "Weather Station Visibility"
-        unique_id: weather_station_visibility
-        state: |
-          {% set rh = states('sensor.weather_station_humidity') | float(none) %}
-          {% set t = states('sensor.weather_station_temperature') | float(none) %}
-          {% set td = states('sensor.weather_station_dew_point') | float(none) %}
-          {% if rh is none or t is none or td is none %}
-            unknown
-          {% else %}
-            {% set spread = [0, t - td] | max %}
-            {% if rh > 95 and spread < 1 %}
-              Fog
-            {% elif rh > 90 %}
-              Mist
-            {% elif rh > 80 %}
-              Haze
-            {% else %}
-              Clear
-            {% endif %}
-          {% endif %}
-
-      - name: "Weather Station Feels Like"
-        unique_id: weather_station_feels_like
-        unit_of_measurement: "°C"
-        device_class: temperature
-        state_class: measurement
-        state: |
-          {% set t = states('sensor.weather_station_temperature') | float(none) %}
-          {% set rh = states('sensor.weather_station_humidity') | float(none) %}
-          {% if t is none or rh is none %}
-            unknown
-          {% else %}
-            {% set es = 6.105 * exp(17.27 * t / (237.7 + t)) %}
-            {% set e = (rh / 100) * es %}
-            {{ (t + 0.33 * e - 4.00) | round(1) }}
-          {% endif %}
-
-
-# Trend inputs for rain likelihood. HA's built-in `trend` integration detects
-# pressure-falling and humidity-rising over a multi-hour window. Output is
-# `on`/`off` consumed by the Rain Likelihood template above.
-
-binary_sensor:
-  - platform: trend
-    sensors:
-      weather_station_pressure_falling:
-        friendly_name: "Weather Station Pressure Falling"
-        entity_id: sensor.weather_station_pressure
-        sample_duration: 10800   # 3 hours of samples
-        max_samples: 12
-        invert: true             # 'on' when gradient is negative
-        min_gradient: 0.00004    # ~0.5 hPa/3h threshold, in units/sec
-
-      weather_station_humidity_rising:
-        friendly_name: "Weather Station Humidity Rising"
-        entity_id: sensor.weather_station_humidity
-        sample_duration: 7200    # 2 hours of samples
-        max_samples: 8
-        min_gradient: 0.0001     # ~0.7 %/2h threshold, in units/sec
+  - platform: statistics
+    name: "Weather Station Humidity Change Rate 2h"
+    unique_id: weather_station_humidity_change_rate_2h
+    entity_id: sensor.weather_station_humidity
+    state_characteristic: change_rate
+    max_age:
+      hours: 2
+    sampling_size: 1000
+    entity_registry_enabled_default: false
