@@ -189,6 +189,7 @@ sensor:
     icon: mdi:wifi
     unit_of_measurement: "%"
     accuracy_decimals: 0
+    entity_category: diagnostic
     update_interval: 60s
     lambda: |-
       float dbm = id(wifi_signal_dbm).state;
