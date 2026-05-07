@@ -6,8 +6,13 @@
 #
 # HA's only role is computing pressure & humidity trend rates from its
 # recorder history. The firmware subscribes to those values and uses them
-# as inputs to the rain likelihood lambda. The two `statistics` sensors
-# below are deliberately hidden from the UI — they're plumbing.
+# as inputs to the rain likelihood lambda.
+#
+# The two `statistics` sensors below are plumbing, not user-facing data.
+# HA's legacy `sensor:` platforms don't accept `entity_registry_enabled_default`,
+# so they show up in HA initially. To hide: Settings → Devices & Services →
+# Entities → search for "change rate" → click each → toggle off "Enabled".
+# This survives restarts but does NOT survive removing/re-adding the package.
 #
 # ----------------------------------------------------------------------------
 # Drop-in instructions
@@ -50,8 +55,6 @@ sensor:
     max_age:
       hours: 3
     sampling_size: 1500
-    # Hide from UI — internal plumbing for firmware-side rain likelihood.
-    entity_registry_enabled_default: false
 
   - platform: statistics
     name: "Weather Station Humidity Change Rate 2h"
@@ -61,4 +64,3 @@ sensor:
     max_age:
       hours: 2
     sampling_size: 1000
-    entity_registry_enabled_default: false
