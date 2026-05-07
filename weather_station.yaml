@@ -153,6 +153,11 @@ sensor:
     entity_id: sensor.weather_station_humidity_change_rate_2h
     internal: true
 
+  - platform: homeassistant
+    id: ha_rainfall_rate
+    entity_id: sensor.weather_station_rainfall_rate
+    internal: true
+
   # Derived metrics — computed in firmware so they appear on the device card
   # alongside Temperature/Humidity/Pressure. Lambdas reference the BME280's
   # IDs above; declaration order matters for sensors that depend on dew_point
