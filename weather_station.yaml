@@ -35,6 +35,10 @@ wifi:
 
 captive_portal:
 
+time:
+  - platform: homeassistant
+    id: ha_time
+
 i2c:
   sda: GPIO19
   scl: GPIO20
