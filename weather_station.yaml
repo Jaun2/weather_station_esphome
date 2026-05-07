@@ -33,6 +33,12 @@ wifi:
 
 captive_portal:
 
+i2c:
+  sda: GPIO19
+  scl: GPIO20
+  scan: true
+  id: bus_a
+
 web_server:
   port: 80
 
