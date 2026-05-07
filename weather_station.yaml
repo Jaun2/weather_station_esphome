@@ -121,8 +121,9 @@ sensor:
       float rh = id(bme_humidity).state;
       if (isnan(t) || isnan(rh)) return NAN;
       // Rothfusz regression is only valid when T >= 27 C and RH >= 40 %.
-      // Outside that range, return T unchanged so the entity stays defined.
-      if (t < 27.0f || rh < 40.0f) return t;
+      // Below that, heat index is undefined — return NAN so HA shows the
+      // entity as Unknown rather than echoing T (which would be misleading).
+      if (t < 27.0f || rh < 40.0f) return NAN;
       float tf = t * 9.0f / 5.0f + 32.0f;
       float hi_f = -42.379f
                    + 2.04901523f * tf
