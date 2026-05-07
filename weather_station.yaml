@@ -64,7 +64,10 @@ captive_portal:
 
 deep_sleep:
   id: deep_sleep_ctl
-  run_duration: 15s
+  run_duration: 25s              # 15 s was tight on first wake after a fresh
+                                 # flash — BME280 → dew_point → derived chain
+                                 # could see NaN within a single 10 s tick.
+                                 # 25 s gives two 10 s ticks comfortably.
   sleep_duration: 5min
   wakeup_pin:
     number: GPIO4
