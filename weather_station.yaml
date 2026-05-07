@@ -35,6 +35,27 @@ wifi:
 
 captive_portal:
 
+globals:
+  # Cumulative tip count since install. Persists across reboots and
+  # (later) deep sleep cycles via NVS.
+  - id: rain_tips_total
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  # Tip count in the current/most-recent rain session. Resets when a new
+  # session begins (gap > session_gap_minutes since last tip).
+  - id: rain_session_tips
+    type: int
+    restore_value: yes
+    initial_value: '0'
+
+  # Unix epoch seconds of the last tip. Used to detect new rain sessions.
+  - id: rain_last_tip_epoch
+    type: uint32_t
+    restore_value: yes
+    initial_value: '0'
+
 time:
   - platform: homeassistant
     id: ha_time
