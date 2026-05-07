@@ -266,6 +266,29 @@ sensor:
                   id: deep_sleep_ctl
                   sleep_duration: ${cutoff_sleep_hours}h
 
+  # Battery percentage from the LiPo discharge curve. Piecewise linear
+  # approximation with anchors at 4.2 V → 100 %, 3.7 V → 50 %, 3.4 V → 10 %,
+  # 3.0 V → 0 %. More accurate near the bottom of the curve than a single
+  # linear interpolation across [3.0, 4.2].
+  - platform: template
+    name: "Battery"
+    id: battery_percent
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: battery
+    state_class: measurement
+    entity_category: diagnostic
+    update_interval: 60s
+    lambda: |-
+      float v = id(battery_voltage).state;
+      if (isnan(v)) return NAN;
+      // Piecewise LiPo curve.
+      if (v >= 4.2f) return 100.0f;
+      if (v >= 3.7f) return 50.0f + (v - 3.7f) * 100.0f;     // [3.7, 4.2] → [50, 100]
+      if (v >= 3.4f) return 10.0f + (v - 3.4f) * 133.33f;    // [3.4, 3.7] → [10, 50]
+      if (v >= 3.0f) return (v - 3.0f) * 25.0f;              // [3.0, 3.4] → [0, 10]
+      return 0.0f;
+
   # Derived metrics — computed in firmware so they appear on the device card
   # alongside Temperature/Humidity/Pressure. Lambdas reference the BME280's
   # IDs above; declaration order matters for sensors that depend on dew_point
