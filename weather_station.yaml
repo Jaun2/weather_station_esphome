@@ -58,3 +58,13 @@ sensor:
 
   - platform: uptime
     name: "Uptime"
+
+  - platform: bme280_i2c
+    address: 0x76
+    update_interval: 10s
+    temperature:
+      name: "Temperature"
+    pressure:
+      name: "Pressure"
+    humidity:
+      name: "Humidity"
