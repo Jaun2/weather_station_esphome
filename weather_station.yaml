@@ -74,6 +74,36 @@ status_led:
     number: GPIO15
     inverted: false
 
+binary_sensor:
+  # Tipping-bucket reed switch. Closes briefly each time the bucket tips,
+  # pulling GPIO4 to GND through the internal pullup.
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode:
+        input: true
+        pullup: true
+      inverted: true                # reed-to-GND closure → 'on'
+    name: "Rain Bucket"
+    filters:
+      - delayed_on: 100ms           # debounce reed contact bounce
+    on_press:
+      then:
+        - lambda: |-
+            auto t = id(ha_time).now();
+            if (t.is_valid()) {
+              uint32_t now_ts = t.timestamp;
+              uint32_t gap = id(rain_last_tip_epoch) > 0
+                ? (now_ts - id(rain_last_tip_epoch))
+                : 0;
+              if (gap > ${session_gap_minutes} * 60) {
+                id(rain_session_tips) = 0;
+              }
+              id(rain_last_tip_epoch) = now_ts;
+            }
+            id(rain_session_tips) += 1;
+            id(rain_tips_total) += 1;
+
 button:
   - platform: restart
     name: "Restart"
