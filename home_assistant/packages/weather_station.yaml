@@ -4,15 +4,21 @@
 # probability, rain likelihood, visibility, feels like) all live in the
 # ESPHome firmware now and appear on the device card.
 #
-# HA's only role is computing pressure & humidity trend rates from its
+# HA's only role is computing pressure & humidity trend gradients from its
 # recorder history. The firmware subscribes to those values and uses them
 # as inputs to the rain likelihood lambda.
 #
-# The two `statistics` sensors below are plumbing, not user-facing data.
-# HA's legacy `sensor:` platforms don't accept `entity_registry_enabled_default`,
+# The two `derivative` sensors below are plumbing, not user-facing data.
+# Legacy `sensor:` platforms don't accept `entity_registry_enabled_default`,
 # so they show up in HA initially. To hide: Settings → Devices & Services →
 # Entities → search for "change rate" → click each → toggle off "Enabled".
 # This survives restarts but does NOT survive removing/re-adding the package.
+#
+# Why `derivative` and not `statistics`? The `statistics` integration's
+# `change_rate` characteristic refuses to compute on a source whose
+# `state_class` is missing or non-measurement, which can happen depending
+# on how ESPHome publishes its BME280 outputs. `derivative` does the same
+# linear-regression fit over a time window with no state_class requirement.
 #
 # ----------------------------------------------------------------------------
 # Drop-in instructions
@@ -47,20 +53,21 @@
 # Used in the `Rain Likelihood` template sensor's lambda.
 
 sensor:
-  - platform: statistics
+  # Pressure trend over 3 hours, expressed as hPa per second.
+  # Linear least-squares fit over the time window.
+  - platform: derivative
     name: "Weather Station Pressure Change Rate 3h"
     unique_id: weather_station_pressure_change_rate_3h
-    entity_id: sensor.weather_station_pressure
-    state_characteristic: change_rate
-    max_age:
-      hours: 3
-    sampling_size: 1500
+    source: sensor.weather_station_pressure
+    time_window: "03:00:00"
+    unit_time: s
+    round: 6
 
-  - platform: statistics
+  # Humidity trend over 2 hours, expressed as % per second.
+  - platform: derivative
     name: "Weather Station Humidity Change Rate 2h"
     unique_id: weather_station_humidity_change_rate_2h
-    entity_id: sensor.weather_station_humidity
-    state_characteristic: change_rate
-    max_age:
-      hours: 2
-    sampling_size: 1000
+    source: sensor.weather_station_humidity
+    time_window: "02:00:00"
+    unit_time: s
+    round: 6
