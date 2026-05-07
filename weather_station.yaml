@@ -3,6 +3,11 @@ substitutions:
   friendly_name: "Weather Station"
   mm_per_tip: '0.6314'              # SS4H-RG reference; recalibrate at Stage 7
   session_gap_minutes: '60'         # idle minutes before a rain session ends
+  min_battery_voltage: '3.0'        # LiPo cutoff (0 %)
+  max_battery_voltage: '4.2'        # LiPo full (100 %)
+  low_voltage_cutoff: '3.3'         # below this, force long sleep
+  cutoff_sleep_hours: '24'          # how long to sleep when battery is low
+  battery_divider_ratio: '2.0'      # DFR1075 IO1 onboard divider (verified, DFRobot wiki)
 
 esphome:
   name: ${device_name}
