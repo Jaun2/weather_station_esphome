@@ -259,15 +259,12 @@ sensor:
     attenuation: 12db
     filters:
       - multiply: ${battery_divider_ratio}
-    on_value:
-      then:
-        - if:
-            condition:
-              lambda: 'return x < ${low_voltage_cutoff};'
-            then:
-              - deep_sleep.enter:
-                  id: deep_sleep_ctl
-                  sleep_duration: ${cutoff_sleep_hours}h
+    # Cutoff trigger removed temporarily — first attempt put the device
+    # into 24h deep sleep on every boot because the ADC's first reading
+    # was below the 3.3 V threshold. Need to verify what the ADC actually
+    # reads before re-enabling. Will re-add this `on_value` block once
+    # we've confirmed sensible voltage values appear in HA over a normal
+    # wake cycle.
 
   # Battery percentage from the LiPo discharge curve. Piecewise linear
   # approximation with anchors at 4.2 V → 100 %, 3.7 V → 50 %, 3.4 V → 10 %,
