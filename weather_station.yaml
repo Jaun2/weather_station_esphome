@@ -13,32 +13,44 @@ esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   on_boot:
-    priority: -10
-    then:
-      - lambda: |-
-          // Stage 3: count a tip if the reed switch caused this wake.
-          // The reed closure is over by the time the chip is up
-          // (~1 s boot vs ~10-50 ms closure), so the binary_sensor's
-          // on_press lambda will not fire from a sleep-wake event in
-          // normal operation.
-          esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-          if (cause == ESP_SLEEP_WAKEUP_GPIO ||
-              cause == ESP_SLEEP_WAKEUP_EXT0 ||
-              cause == ESP_SLEEP_WAKEUP_EXT1) {
-            auto t = id(ha_time).now();
-            if (t.is_valid()) {
-              uint32_t now_ts = t.timestamp;
-              uint32_t gap = id(rain_last_tip_epoch) > 0
-                ? (now_ts - id(rain_last_tip_epoch))
-                : 0;
-              if (gap > ${session_gap_minutes} * 60) {
-                id(rain_session_tips) = 0;
+    # Boot-safety: prevent sleep until the HA helper toggle has been
+    # received and the on_state handler decides allow vs. prevent.
+    # Without this, a slow first-boot WiFi/API connect can let the
+    # 25 s run_duration timer fire before we know the toggle state,
+    # and the device sleeps anyway. Toggle ON → on_state will call
+    # deep_sleep.allow; toggle OFF → on_state already calls prevent
+    # so this stays effectively in force.
+    - priority: 600
+      then:
+        - deep_sleep.prevent: deep_sleep_ctl
+
+    # Wake-cause check for reed-switch tips during deep sleep.
+    - priority: -10
+      then:
+        - lambda: |-
+            // Stage 3: count a tip if the reed switch caused this wake.
+            // The reed closure is over by the time the chip is up
+            // (~1 s boot vs ~10-50 ms closure), so the binary_sensor's
+            // on_press lambda will not fire from a sleep-wake event in
+            // normal operation.
+            esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+            if (cause == ESP_SLEEP_WAKEUP_GPIO ||
+                cause == ESP_SLEEP_WAKEUP_EXT0 ||
+                cause == ESP_SLEEP_WAKEUP_EXT1) {
+              auto t = id(ha_time).now();
+              if (t.is_valid()) {
+                uint32_t now_ts = t.timestamp;
+                uint32_t gap = id(rain_last_tip_epoch) > 0
+                  ? (now_ts - id(rain_last_tip_epoch))
+                  : 0;
+                if (gap > ${session_gap_minutes} * 60) {
+                  id(rain_session_tips) = 0;
+                }
+                id(rain_last_tip_epoch) = now_ts;
               }
-              id(rain_last_tip_epoch) = now_ts;
+              id(rain_session_tips) += 1;
+              id(rain_tips_total) += 1;
             }
-            id(rain_session_tips) += 1;
-            id(rain_tips_total) += 1;
-          }
 
 esp32:
   board: esp32-c6-devkitc-1
@@ -239,12 +251,14 @@ sensor:
     entity_id: sensor.weather_station_rainfall_rate
     internal: true
 
-  # Battery voltage on GPIO1 (the DFR1075's silkscreen "IO1" — built-in
-  # 2:1 divider on the LiPo rail). Sample once per wake, post-WiFi, to
-  # minimize radio-coupled ADC noise (SS4H-RG pattern). Triggers
-  # low-voltage cutoff if voltage drops below the threshold.
+  # Battery voltage on GPIO0. Confirmed against the DFRobot DFR1075 wiki
+  # Arduino sample which uses analogRead(0) / analogReadMilliVolts(0) —
+  # pin 0 == GPIO0 on the ESP32-C6. CLAUDE.md previously said GPIO0 was
+  # the 3V3_C control pin; that note was wrong, and we don't currently
+  # have anything wired to 3V3_C anyway. Sample post-WiFi (SS4H-RG
+  # pattern) to minimize radio-coupled ADC noise.
   - platform: adc
-    pin: GPIO1
+    pin: GPIO0
     name: "Battery Voltage"
     id: battery_voltage
     unit_of_measurement: "V"
