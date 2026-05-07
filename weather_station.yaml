@@ -351,3 +351,14 @@ text_sensor:
       if (fp >= -2.0f) return std::string("Light Frost");
       if (fp >= -5.0f) return std::string("Hard Frost");
       return std::string("Severe Frost");
+
+  - platform: template
+    name: "Rain Intensity"
+    update_interval: 10s
+    lambda: |-
+      float rate = id(ha_rainfall_rate).state;
+      if (isnan(rate) || rate < 0.1f) return std::string("No Rain");
+      if (rate < 2.5f) return std::string("Drizzle");
+      if (rate < 7.6f) return std::string("Moderate");
+      if (rate < 50.0f) return std::string("Heavy");
+      return std::string("Storm");
