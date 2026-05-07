@@ -4,9 +4,11 @@ DIY off-grid weather station that publishes data to Home Assistant. Permanent ou
 
 ## What it is
 
-**Hardware:** DFRobot FireBeetle 2 ESP32-C6 (DFR1075), BME280 (T/H/P), 5000 mAh LiPo + 6 V solar panel with onboard MPPT. Tipping-bucket rain gauge with reed switch (Stage 2+). 3D-printed inner enclosure inside the rain gauge body for the electronics; Stevenson screen for the BME280.
+**Hardware:** DFRobot FireBeetle 2 ESP32-C6 (DFR1075), BME280 (T/H/P), tipping-bucket rain gauge with reed switch on `GPIO4`, 5000 mAh LiPo + 6 V solar panel with onboard MPPT. 3D-printed inner enclosure inside the rain gauge body for the electronics; Stevenson screen for the BME280.
 
-**Software:** ESPHome firmware on the C6, ESPHome native API → Home Assistant. Derived metrics (dew point, heat index, etc.) are computed in firmware so they appear on the device card alongside the raw sensors. HA-side companion package handles the things that genuinely need historical data (pressure / humidity trend gradients).
+**Software:** ESPHome firmware on the C6, ESPHome native API → Home Assistant. Derived metrics (dew point, heat index, rain intensity, feels-like, etc.) are computed in firmware so they appear on the device card alongside the raw sensors. HA-side companion package handles the things that genuinely need historical data — pressure / humidity / rainfall trend gradients and a daily-reset rainfall total.
+
+**Power architecture:** 5-minute deep sleep cycle. Reed-switch closures wake the chip out of cycle so rain tips are recorded promptly. Average current ~4 mA → essentially indefinite runtime on solar.
 
 For the architectural decisions, hardware rationale, and full multi-stage build roadmap, see [`CLAUDE.md`](./CLAUDE.md).
 
@@ -39,9 +41,7 @@ In the dashboard:
 
 ### 2. Add secrets
 
-In the dashboard, top-right **⋮ menu → Secrets**. The ESPHome add-on stores secrets in a single `secrets.yaml` shared across all your ESPHome devices.
-
-Add these keys (use [`secrets.example.yaml`](./secrets.example.yaml) as a template):
+In the dashboard, top-right **⋮ menu → Secrets**. Add these keys (use [`secrets.example.yaml`](./secrets.example.yaml) as a template):
 
 ```yaml
 wifi_ssid: "..."
@@ -53,7 +53,18 @@ api_encryption_key: "..."   # 32-byte base64; ESPHome dashboard has a "Generate"
 
 Save.
 
-### 3. First flash (USB, via web.esphome.io)
+### 3. Create the HA helper toggle (required from Stage 3 onwards)
+
+The deep-sleep firmware reads a Home Assistant helper toggle to decide whether to sleep or stay awake. Without it, the device will sleep normally — but you won't have a clean way to interrupt the cycle for OTA flashing.
+
+**Settings → Devices & Services → Helpers → Create Helper → Toggle.**
+
+- Name: `Weather Station Deep Sleep`
+- Default state: ON
+
+ON = device sleeps normally. OFF = device stays awake (used for OTA install and bench debugging).
+
+### 4. First flash (USB, via web.esphome.io)
 
 The HA add-on can't reach USB on your PC, so the first flash uses Chrome's WebSerial.
 
@@ -68,17 +79,27 @@ The HA add-on can't reach USB on your PC, so the first flash uses Chrome's WebSe
 
 The device joins Wi-Fi and announces itself as `weather-station` via mDNS. Home Assistant's ESPHome integration will offer to add it; click **CONFIGURE → ADD** and paste the API encryption key when prompted.
 
-### 4. Subsequent flashes (OTA)
+### 5. Subsequent flashes (OTA — with the deep-sleep dance)
 
-Once the device is on Wi-Fi and visible in HA, you don't need USB:
+Because the device is in deep sleep most of the time, OTA updates require briefly disabling sleep so the device stays online long enough to receive the new firmware:
 
-1. Edit `weather_station.yaml` in this repo.
-2. Copy/paste the new contents into the ESPHome dashboard editor.
-3. **INSTALL → Wirelessly.** The dashboard pushes the build over the network using the OTA password.
+1. **Toggle `Weather Station Deep Sleep` to OFF** in HA.
+2. Wait for the next wake (within 5 min). Device comes online and stays awake.
+3. Edit `weather_station.yaml` in this repo, paste into the ESPHome dashboard editor.
+4. **INSTALL → Wirelessly.**
+5. Device reboots and stays awake (toggle still OFF).
+6. **Toggle `Weather Station Deep Sleep` back to ON.**
+7. Device sleeps within 25 s. Production cycle resumes.
 
-### 5. Install the HA package
+If you forget to toggle OFF and try to install while the device is sleeping, the dashboard fails with a connection error. Recovery: toggle OFF, wait up to 5 min for the next wake, retry the install.
 
-The package adds two `derivative` sensors that compute pressure/humidity trend gradients from HA's recorder history. The firmware subscribes to these via the native API and uses them as inputs to the **Rain Likelihood** lambda — that's how a firmware-side metric can incorporate trend data without keeping any history on the device.
+### 6. Install the HA package
+
+The package adds:
+- Three `derivative` sensors that compute trend gradients (pressure 3h, humidity 2h, rainfall 15min) from HA's recorder history. The firmware subscribes to these via the native API and uses them for `Rain Likelihood` and `Rain Intensity`.
+- A `utility_meter` for daily rainfall reset at midnight.
+
+**Steps:**
 
 1. On your HA host, copy [`home_assistant/packages/weather_station.yaml`](./home_assistant/packages/weather_station.yaml) to `/config/packages/weather_station.yaml`. Create the directory if it doesn't exist.
 2. **One-time setup** if you don't already use packages — in `configuration.yaml`, add (or extend) the `homeassistant:` block:
@@ -90,18 +111,9 @@ The package adds two `derivative` sensors that compute pressure/humidity trend g
 
 3. **Restart Home Assistant.**
 
-After the restart, two new sensors appear in HA: `Pressure Change Rate 3h` and `Humidity Change Rate 2h`. They're plumbing — the firmware reads them back; you don't need them on any dashboard. Hide them via **Settings → Devices & Services → Entities** if they bother you.
+After the restart, three plumbing sensors appear in HA: `Pressure Change Rate 3h`, `Humidity Change Rate 2h`, `Rainfall Rate`. They're internal — the firmware reads them back; you don't need them on any dashboard. Hide them via **Settings → Devices & Services → Entities** if they bother you.
 
-### 6. (Optional) HA helper toggle for Stage 3
-
-Used by the deep-sleep stage. Create it now so it's ready when Stage 3 lands:
-
-**Settings → Devices & Services → Helpers → Create Helper → Toggle**
-
-- Name: `Weather Station Deep Sleep`
-- Default state: ON
-
-When Stage 3 wires it up: ON = device sleeps normally between wakes; OFF = device stays awake (used for OTA install windows).
+The `Rainfall Today` utility meter is user-facing — useful for daily-rainfall dashboard cards.
 
 ### 7. Verify the BME280 is genuine
 
@@ -115,17 +127,19 @@ Humidity moves on breath = real BME280. Humidity stays flat = BMP280; replace it
 
 ## Sensors
 
-After firmware install + HA package, the `weather-station` device card shows ~13 entities.
+The `weather-station` device card shows ~17 entities after firmware install + HA package, organised as follows.
 
-### Raw measurements (from the BME280)
+### Raw measurements
 
 | Entity | Unit | Notes |
 |---|---|---|
-| `Temperature` | °C | |
-| `Humidity` | % RH | |
-| `Pressure` | hPa | Raw (~840 hPa at 1500 m altitude) |
+| `Temperature` | °C | BME280 |
+| `Humidity` | % RH | BME280 |
+| `Pressure` | hPa | BME280 — raw (~840 hPa at 1500 m) |
+| `Rain Bucket` | on/off | Reed switch state (mostly diagnostic) |
+| `Rain Tips` | count | Cumulative tip count since install |
 
-### Derived metrics (computed in firmware lambdas)
+### Derived metrics — numeric (firmware lambdas)
 
 | Entity | Type | Notes |
 |---|---|---|
@@ -134,25 +148,44 @@ After firmware install + HA package, the `weather-station` device card shows ~13
 | `Frost Point` | °C | Magnus-Tetens (ice saturation); `Unknown` above 0 °C |
 | `Fog Probability` | % | Heuristic from RH and dew-point spread |
 | `Rain Likelihood` | % | Combines pressure trend, humidity trend, dew-point spread |
+| `Rainfall` | mm | Cumulative since install (`tips × mm_per_tip`) |
+| `Rainfall Session` | mm | Current/most-recent rain event; resets when no tips for 60 min |
 | `Feels Like` | °C | Australian Apparent Temperature (Steadman / BOM), no-wind variant |
-| `Visibility` | text | Fog / Mist / Haze / Clear |
-| `Heat Index Category` | text | Caution / Extreme Caution / Danger / Extreme Danger / Not Applicable |
-| `Frost Point Category` | text | Light Frost / Hard Frost / Severe Frost / Not Applicable |
+
+### Derived metrics — categorical (firmware text lambdas)
+
+| Entity | Possible values |
+|---|---|
+| `Visibility` | Fog / Mist / Haze / Clear |
+| `Heat Index Category` | Caution / Extreme Caution / Danger / Extreme Danger / Not Applicable |
+| `Frost Point Category` | Light Frost / Hard Frost / Severe Frost / Not Applicable |
+| `Rain Intensity` | No Rain / Drizzle / Moderate / Heavy / Storm |
 
 ### Diagnostics
 
 | Entity | Notes |
 |---|---|
-| `Wi-Fi Signal` | dBm |
-| `Uptime` | seconds since boot |
-| `Restart` | button to reboot the device |
+| `Wi-Fi Signal` | dBm — raw signal strength |
+| `Wi-Fi Signal Strength` | % — human-friendly mapping (-50 dBm ≈ 100 %, -100 dBm = 0 %) |
+| `Uptime` | seconds since last wake (resets every cycle) |
 
-### HA-side plumbing (hidden from dashboards)
+### Controls
 
 | Entity | Notes |
 |---|---|
-| `Pressure Change Rate 3h` | hPa/sec, derivative over 3-hour window — fed to firmware |
-| `Humidity Change Rate 2h` | %/sec, derivative over 2-hour window — fed to firmware |
+| `Restart` | Reboot the device |
+| `Rain Tips Reset` | Zero out cumulative tips, session tips, last-tip timestamp (for calibration) |
+
+### HA-side plumbing (hidden by default)
+
+These compute trend gradients from HA's recorder history and feed them back to the firmware. Hide them in HA's UI if they appear and bother you.
+
+| Entity | Notes |
+|---|---|
+| `Pressure Change Rate 3h` | hPa/sec, derivative over 3-hour window — feeds Rain Likelihood |
+| `Humidity Change Rate 2h` | %/sec, derivative over 2-hour window — feeds Rain Likelihood |
+| `Rainfall Rate` | mm/hour, derivative over 15-min window — feeds Rain Intensity |
+| `Rainfall Today` | mm, utility meter resetting at midnight — useful on dashboards |
 
 ## Build stages
 
@@ -160,9 +193,9 @@ Sequential — each has its own verification gate. See [`CLAUDE.md`](./CLAUDE.md
 
 - [x] **Stage 0** — Bring-up (Wi-Fi, native API, OTA, status LED, restart button)
 - [x] **Stage 1** — BME280 over I²C + derived metrics + HA trend package
-- [ ] **Stage 2** — Reed-switch rain-gauge tip counting (next)
-- [ ] **Stage 3** — Deep sleep + 5-minute wake cycle
-- [ ] **Stage 4** — Battery ADC + low-voltage cutoff
+- [x] **Stage 2** — Reed-switch rain-gauge tip counting + session detection + intensity categorisation
+- [x] **Stage 3** — Deep sleep + 5-minute wake cycle + reed-wake + helper-toggle for OTA
+- [ ] **Stage 4** — Battery ADC + low-voltage cutoff (next)
 - [ ] **Stage 5** — Solar input + Schottky diode
 - [ ] **Stage 6** — Mechanical assembly + waterproofing
 - [ ] **Stage 7** — Field deployment + calibration
@@ -174,14 +207,19 @@ Sequential — each has its own verification gate. See [`CLAUDE.md`](./CLAUDE.md
 
 **Compile takes forever the first time.** Expected. ESP-IDF + the C6 toolchain weigh in around 1 GB and PlatformIO has to download and build them. ~10–15 minutes on a Pi 4. Subsequent compiles are ~30 seconds (cached).
 
-**OTA fails with "Error resolving IP address of weather-station.local".** mDNS resolution issue. Check your router's client list for the device's IP and either set it as a static IP in the YAML's `wifi:` block, or trigger the install with the IP entered manually.
+**OTA fails with "Error resolving IP address of weather-station.local".** Either mDNS resolution issue (try the device's IP directly), or — far more likely from Stage 3 onwards — you forgot to toggle `Weather Station Deep Sleep` OFF before installing. The device is asleep and not reachable. Toggle OFF, wait up to 5 min for the next wake, retry.
+
+**The device disappears from HA every 5 minutes.** That's deep sleep working as intended. Each wake cycle is ~25 s during which the device publishes fresh values, then it sleeps for 5 minutes.
 
 **Heat Index reads "Unknown".** That's correct below 27 °C / 40 % RH — heat index is a hot-weather metric, undefined in cooler conditions. Same for Frost Point above 0 °C.
 
-**Strapping pin warning on `GPIO15`.** Expected and harmless on the DFR1075. The board's onboard LED is wired to a strapping pin, but DFRobot's circuit doesn't pull strongly enough to affect boot-time strapping. Warning is left visible deliberately.
+**Strapping pin warnings on `GPIO4` and `GPIO15`.** Expected and harmless on the DFR1075. GPIO4 is the reed switch (normally open, internal pullup keeps it HIGH at reset → safe boot mode), GPIO15 is the onboard LED. Warnings are left visible deliberately.
+
+**Rain tip not registering when I swipe a magnet.** With the device in deep sleep, the swipe needs to actually close the reed switch — too far away and the magnet won't trigger it. The first reliable indicator is `Rain Bucket` flipping briefly to `on` in HA, OR `Rain Tips` incrementing on the next wake. Without a tipping bucket installed, manual swipes are awkward.
 
 ## Notes
 
 - `secrets.yaml` is **gitignored**. Never commit real Wi-Fi or OTA credentials.
-- The HA package's `Pressure Change Rate 3h` / `Humidity Change Rate 2h` sensors need a few minutes of accumulated history before they produce non-zero gradients. Rain Likelihood will read low at first then settle.
-- The mm-per-tip rainfall calibration depends on the bucket geometry — calibrate with a measured pour once Stage 2 is in place.
+- The HA package's `Rainfall Rate` and `Pressure/Humidity Change Rate` sensors need a few minutes of accumulated history before they produce meaningful gradients. Rain Likelihood and Rain Intensity will read low/idle at first then settle.
+- The `mm_per_tip` rainfall calibration depends on bucket geometry. Default is `0.6314` (SS4H-RG reference). Recalibrate at Stage 7 with a measured pour: pour a known volume into the funnel slowly, count tips, divide. Edit the substitution in `weather_station.yaml` and re-flash.
+- Rain Session resets when no tips arrive for `session_gap_minutes` (default 60). Tweak the substitution if your rain patterns suggest a different gap.
