@@ -166,6 +166,7 @@ sensor:
   - platform: template
     name: "Dew Point"
     id: dew_point
+    icon: mdi:water-thermometer-outline
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
