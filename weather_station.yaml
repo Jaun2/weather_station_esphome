@@ -111,6 +111,7 @@ sensor:
 
   - platform: template
     name: "Heat Index"
+    id: heat_index
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -138,6 +139,7 @@ sensor:
 
   - platform: template
     name: "Frost Point"
+    id: frost_point
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -226,3 +228,28 @@ text_sensor:
       if (rh > 90.0f) return std::string("Mist");
       if (rh > 80.0f) return std::string("Haze");
       return std::string("Clear");
+
+  - platform: template
+    name: "Heat Index Category"
+    update_interval: 10s
+    lambda: |-
+      float hi = id(heat_index).state;
+      // NaN means heat index isn't applicable (T < 27 C OR RH < 40 %).
+      if (isnan(hi)) return std::string("Not Applicable");
+      // NWS-standard breakpoints (originally 80/90/103/125 °F).
+      if (hi < 32.2f) return std::string("Caution");
+      if (hi < 39.4f) return std::string("Extreme Caution");
+      if (hi < 51.7f) return std::string("Danger");
+      return std::string("Extreme Danger");
+
+  - platform: template
+    name: "Frost Point Category"
+    update_interval: 10s
+    lambda: |-
+      float fp = id(frost_point).state;
+      // NaN means frost point isn't applicable (T >= 0 C).
+      if (isnan(fp)) return std::string("Not Applicable");
+      // Horticulture/agriculture convention; not an NWS standard.
+      if (fp >= -2.0f) return std::string("Light Frost");
+      if (fp >= -5.0f) return std::string("Hard Frost");
+      return std::string("Severe Frost");
