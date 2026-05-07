@@ -292,7 +292,9 @@ sensor:
     device_class: battery
     state_class: measurement
     entity_category: diagnostic
-    update_interval: 60s
+    update_interval: 10s            # match battery_voltage's cadence so the
+                                    # percentage doesn't lag behind voltage
+                                    # for up to a minute after each wake.
     lambda: |-
       float v = id(battery_voltage).state;
       if (isnan(v)) return NAN;
