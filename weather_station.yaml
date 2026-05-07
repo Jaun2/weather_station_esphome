@@ -239,6 +239,33 @@ sensor:
     entity_id: sensor.weather_station_rainfall_rate
     internal: true
 
+  # Battery voltage on IO1 (DFR1075's built-in divider). Sample once per
+  # wake, post-WiFi, to minimize radio-coupled ADC noise (SS4H-RG pattern).
+  # Triggers low-voltage cutoff if voltage drops below the threshold.
+  - platform: adc
+    pin: IO1
+    name: "Battery Voltage"
+    id: battery_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    device_class: voltage
+    state_class: measurement
+    entity_category: diagnostic
+    setup_priority: -200
+    update_interval: never
+    attenuation: 12db
+    filters:
+      - multiply: ${battery_divider_ratio}
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return x < ${low_voltage_cutoff};'
+            then:
+              - deep_sleep.enter:
+                  id: deep_sleep_ctl
+                  sleep_duration: ${cutoff_sleep_hours}h
+
   # Derived metrics — computed in firmware so they appear on the device card
   # alongside Temperature/Humidity/Pressure. Lambdas reference the BME280's
   # IDs above; declaration order matters for sensors that depend on dew_point
