@@ -253,7 +253,9 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     setup_priority: -200
-    update_interval: never
+    update_interval: 10s        # 'never' was a trap — it truly means never;
+                                # 10 s gives 2 samples per 25 s wake window
+                                # which is more than enough for one publish.
     attenuation: 12db
     filters:
       - multiply: ${battery_divider_ratio}
