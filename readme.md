@@ -8,7 +8,7 @@ DIY off-grid weather station that publishes data to Home Assistant. Permanent ou
 
 **Software:** ESPHome firmware on the C6, ESPHome native API → Home Assistant. Derived metrics (dew point, heat index, rain intensity, feels-like, etc.) are computed in firmware so they appear on the device card alongside the raw sensors. HA-side companion package handles the things that genuinely need historical data — pressure / humidity / rainfall trend gradients and a daily-reset rainfall total.
 
-**Power architecture:** 5-minute deep sleep cycle. Reed-switch closures wake the chip out of cycle so rain tips are recorded promptly. Average current ~4 mA → essentially indefinite runtime on solar.
+**Power architecture:** 5-minute deep sleep cycle. Reed-switch closures wake the chip out of cycle so rain tips are recorded promptly. Battery voltage is monitored on every wake; below 3.3 V the firmware forces a 24-hour deep sleep to protect the LiPo from over-discharge. Average current ~4 mA → essentially indefinite runtime on solar.
 
 For the architectural decisions, hardware rationale, and full multi-stage build roadmap, see [`CLAUDE.md`](./CLAUDE.md).
 
@@ -168,6 +168,8 @@ The `weather-station` device card shows ~17 entities after firmware install + HA
 | `Wi-Fi Signal` | dBm — raw signal strength |
 | `Wi-Fi Signal Strength` | % — human-friendly mapping (-50 dBm ≈ 100 %, -100 dBm = 0 %) |
 | `Uptime` | seconds since last wake (resets every cycle) |
+| `Battery Voltage` | V — raw LiPo voltage via the FireBeetle's onboard 2:1 divider on `GPIO0` |
+| `Battery` | % — piecewise LiPo curve mapping voltage to charge level (4.2 V → 100 %, 3.7 V → 50 %, 3.4 V → 10 %, 3.0 V → 0 %) |
 
 ### Controls
 
@@ -195,8 +197,8 @@ Sequential — each has its own verification gate. See [`CLAUDE.md`](./CLAUDE.md
 - [x] **Stage 1** — BME280 over I²C + derived metrics + HA trend package
 - [x] **Stage 2** — Reed-switch rain-gauge tip counting + session detection + intensity categorisation
 - [x] **Stage 3** — Deep sleep + 5-minute wake cycle + reed-wake + helper-toggle for OTA
-- [ ] **Stage 4** — Battery ADC + low-voltage cutoff (next)
-- [ ] **Stage 5** — Solar input + Schottky diode
+- [x] **Stage 4** — Battery ADC + piecewise LiPo curve + low-voltage cutoff at 3.3 V
+- [ ] **Stage 5** — Solar input + Schottky diode (next)
 - [ ] **Stage 6** — Mechanical assembly + waterproofing
 - [ ] **Stage 7** — Field deployment + calibration
 - [ ] **Stage 8** — Lightning detector (AS3935)
@@ -216,6 +218,8 @@ Sequential — each has its own verification gate. See [`CLAUDE.md`](./CLAUDE.md
 **Strapping pin warnings on `GPIO4` and `GPIO15`.** Expected and harmless on the DFR1075. GPIO4 is the reed switch (normally open, internal pullup keeps it HIGH at reset → safe boot mode), GPIO15 is the onboard LED. Warnings are left visible deliberately.
 
 **Rain tip not registering when I swipe a magnet.** With the device in deep sleep, the swipe needs to actually close the reed switch — too far away and the magnet won't trigger it. The first reliable indicator is `Rain Bucket` flipping briefly to `on` in HA, OR `Rain Tips` incrementing on the next wake. Without a tipping bucket installed, manual swipes are awkward.
+
+**Device disappears for 24 hours and helper toggle won't bring it back.** The battery voltage dropped below 3.3 V, triggering the software low-voltage cutoff. Plug in USB-C; the LiPo will charge. The device will wake on its next 24-hour timer (you can also force-wake via reset). The cutoff is deliberate LiPo protection — over-discharging below 3.3 V ages the cell prematurely.
 
 ## Notes
 
