@@ -86,7 +86,11 @@ binary_sensor:
       inverted: true                # reed-to-GND closure → 'on'
     name: "Rain Bucket"
     filters:
-      - delayed_on: 100ms           # debounce reed contact bounce
+      - delayed_off: 100ms          # fire leading edge immediately;
+                                    # debounce by holding 'on' for 100ms
+                                    # after release. Reed swipes are too
+                                    # brief (10-50 ms) for delayed_on to
+                                    # ever fire on_press.
     on_press:
       then:
         - lambda: |-
