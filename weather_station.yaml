@@ -62,6 +62,17 @@ wifi:
 
 captive_portal:
 
+deep_sleep:
+  id: deep_sleep_ctl
+  run_duration: 15s
+  sleep_duration: 5min
+  wakeup_pin:
+    number: GPIO4
+    inverted: true              # wake on falling edge (reed-to-GND closure)
+    mode:
+      input: true
+      pullup: true
+
 globals:
   # Cumulative tip count since install. Persists across reboots and
   # (later) deep sleep cycles via NVS.
