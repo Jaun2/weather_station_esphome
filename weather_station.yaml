@@ -181,7 +181,21 @@ button:
 sensor:
   - platform: wifi_signal
     name: "Wi-Fi Signal"
+    id: wifi_signal_dbm
     update_interval: 60s
+
+  - platform: template
+    name: "Wi-Fi Signal Strength"
+    icon: mdi:wifi
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      float dbm = id(wifi_signal_dbm).state;
+      if (isnan(dbm)) return NAN;
+      // Linear map: -50 dBm -> 100 %, -100 dBm -> 0 %, clamped.
+      float pct = 2.0f * (dbm + 100.0f);
+      return std::max(0.0f, std::min(100.0f, pct));
 
   - platform: uptime
     name: "Uptime"
