@@ -108,6 +108,15 @@ button:
   - platform: restart
     name: "Restart"
 
+  - platform: template
+    name: "Rain Tips Reset"
+    on_press:
+      then:
+        - lambda: |-
+            id(rain_tips_total) = 0;
+            id(rain_session_tips) = 0;
+            id(rain_last_tip_epoch) = 0;
+
 sensor:
   - platform: wifi_signal
     name: "Wi-Fi Signal"
