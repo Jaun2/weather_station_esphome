@@ -239,11 +239,12 @@ sensor:
     entity_id: sensor.weather_station_rainfall_rate
     internal: true
 
-  # Battery voltage on IO1 (DFR1075's built-in divider). Sample once per
-  # wake, post-WiFi, to minimize radio-coupled ADC noise (SS4H-RG pattern).
-  # Triggers low-voltage cutoff if voltage drops below the threshold.
+  # Battery voltage on GPIO1 (the DFR1075's silkscreen "IO1" — built-in
+  # 2:1 divider on the LiPo rail). Sample once per wake, post-WiFi, to
+  # minimize radio-coupled ADC noise (SS4H-RG pattern). Triggers
+  # low-voltage cutoff if voltage drops below the threshold.
   - platform: adc
-    pin: IO1
+    pin: GPIO1
     name: "Battery Voltage"
     id: battery_voltage
     unit_of_measurement: "V"
