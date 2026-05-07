@@ -1,0 +1,6 @@
+secrets.yaml
+.esphome/
+*.bin
+
+# Local-only working docs (specs, plans, scratch)
+docs/superpowers/
