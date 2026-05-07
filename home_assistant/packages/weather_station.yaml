@@ -71,3 +71,22 @@ sensor:
     time_window: "02:00:00"
     unit_time: s
     round: 6
+
+  # Rainfall rate over a 15-min window. Source for the firmware-side
+  # Rain Intensity text sensor. Stage 2.
+  - platform: derivative
+    name: "Weather Station Rainfall Rate"
+    unique_id: weather_station_rainfall_rate
+    source: sensor.weather_station_rainfall
+    time_window: "00:15:00"
+    unit_time: h
+    round: 2
+
+# Daily-reset rainfall total. Source is the cumulative `Rainfall` sensor
+# published by the device firmware (with state_class: total_increasing).
+# Stage 2.
+utility_meter:
+  weather_station_rainfall_today:
+    name: "Weather Station Rainfall Today"
+    source: sensor.weather_station_rainfall
+    cycle: daily
