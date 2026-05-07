@@ -24,7 +24,7 @@ The 3D-printed enclosure for this project comes from the **Smart Solutions 4 Hom
 - **Tip counting.** SS4H-RG counts tips on the HA side using `binary_sensor: status` flips + the `history_stats` integration. That works ONLY because their device wakes ONLY on a reed-switch closure (no `sleep_duration` configured — pure GPIO wake). Each wake = one tip. Our architecture has BOTH timer wakes (for BME280 every 5 minutes) AND reed wakes (for tips). Counting status flips would inflate tip counts by `wakes_per_hour`. We need to actually distinguish wake causes — see "Deep sleep + interrupt wake" below for the options.
 - **Power source.** They run on AAA cells (3.6–6 V); we run on LiPo (3.0–4.2 V) with solar + onboard MPPT. Battery curve clamps differ; charging is automatic on our hardware.
 - **Sensor set.** They have just a tipping bucket; we add BME280 (and later: lightning, wind, soil moisture, UV).
-- **Board variant.** They use a generic ESP32 (`board: esp32dev`, `framework: arduino`); we use ESP32-C6 (`board: esp32-c6-devkitc-1`, `variant: esp32c6`, framework usually `esp-idf` for best C6 support in ESPHome). Wake-source API is also different — see below.
+- **Board variant.** They use a generic ESP32 (`board: esp32dev`, `framework: arduino`); we use the DFRobot FireBeetle 2 ESP32-C6 (DFR1075). There is no dedicated PlatformIO/ESPHome `board:` definition for the DFR1075, so we use `board: esp32-c6-devkitc-1` as a generic ESP32-C6 stand-in (with `variant: esp32c6` and framework `esp-idf` for best C6 support in ESPHome). The board ID supplies framework / flash-size / partition defaults only — **all DFR1075-specific pin assignments must be set explicitly in the YAML** (I²C `sda`/`scl`, battery ADC pin, 3V3_C control pin, status LED, BOOT pin, deep-sleep wake pins). Don't trust any pin-name aliases the generic devkit board file might imply; the DFR1075's silkscreen and the DFRobot wiki are the source of truth. Wake-source API is also different from the original ESP32 — see below.
 
 **Their full YAML and PCB design files** live at https://download.smartsolutions4home.com/ — useful as a known-good starting point for our own config.
 
@@ -36,7 +36,7 @@ I'm a software developer (mainly Laravel, Vue.js, Inertia, Tailwind, shadcn-vue,
 
 ### Main electronics
 
-- **MCU**: DFRobot FireBeetle 2 ESP32-C6 (DFR1075)
+- **MCU**: DFRobot FireBeetle 2 ESP32-C6 (DFR1075) — wiki: [wiki.dfrobot.com/dfr1075](https://wiki.dfrobot.com/dfr1075/) (canonical reference for pinout, schematic, and electrical characteristics — defer to the wiki, not the generic ESP32-C6-DevKitC-1 datasheet, when they disagree)
   - 160 MHz RISC-V single-core
   - 4 MB flash, no PSRAM
   - Wi-Fi 6 (2.4 GHz only), BLE 5, Zigbee 3.0, Thread 1.3
@@ -245,23 +245,82 @@ Some derived metrics (dew point, heat index, sea-level pressure) can also be com
 
 ## Future Expansion (designed-for, not yet built)
 
-ESPHome has a built-in component for almost everything we'd want to add:
+ESPHome has a built-in component for almost everything we'd want to add. The firmware side is trivial; the hardware-side considerations (mounting, power rails, calibration) are where the real work is.
 
-- **Anemometer** (cup head with reed switch): `pulse_counter` component, sample within the awake window — don't wake on every pulse (cups can spin to 50 Hz).
-- **Wind vane** (AS5600 magnetic encoder): `as5600` component on the existing I²C bus. Address `0x36`, no conflict with BME280 or AS3935.
-- **Lightning detector** (AS3935 SparkFun breakout): `as3935_i2c` component. IRQ pin configured as a deep-sleep wake source. Sits on always-on 3V3 (not 3V3_C) — must catch strikes during sleep.
-- **Soil temperature** (DS18B20): `dallas_temp` component on a one-wire bus.
+### Lightning detector (AS3935) — high-priority post-deployment expansion
+
+**Hardware:** SparkFun Qwiic AS3935 breakout (SPX-15441 or equivalent). I²C address `0x03` (default) — no conflict with BME280 (`0x76`/`0x77`) or AS5600 (`0x36`). Wires onto the existing I²C bus (GPIO19/GPIO20 on the C6); IRQ to a free LP-IO pin (e.g., GPIO5 — confirm against the C6 LP-pin list when wiring).
+
+**Architectural changes this introduces:**
+
+- **Power rail change.** The AS3935 must sit on the **always-on 3V3 rail**, not the gated 3V3_C, because power-gating it between wakes would defeat the point — strikes that happen while the ESP32 sleeps would be missed. Adds ~60 µA continuous quiescent draw on top of the C6's ~16 µA. Daily cost ~1.8 mAh; negligible vs ~2000–3000 mAh/day solar harvest on a sunny Vereeniging day.
+- **Second wake source.** The current dual-wake architecture (timer + reed) becomes triple-wake (timer + reed + AS3935 IRQ). On the C6, ESPHome's `deep_sleep` `wakeup_pin` (or the underlying `esp_deep_sleep_enable_gpio_wakeup` LP-IO API) accepts a bitmask of pins, and ESPHome's `binary_sensor` on the IRQ pin distinguishes which fired via the AS3935's interrupt-source register. Wake-cause branching in our `on_boot` lambda extends from "timer or reed" to "timer or reed or lightning."
+
+**ESPHome integration:** the `as3935_i2c` component (built-in) handles the chip's I²C protocol, event types (lightning strike vs disturber vs noise), distance estimation, and energy reporting. Configure noise floor, watchdog threshold, and spike rejection at the YAML level — surface them as MQTT-set retained config topics or via HA-side service calls so they can be tuned post-deployment without re-flashing.
+
+**LCO antenna calibration:** the AS3935's loop antenna must be tuned within ±3.5 % of 500 kHz for accurate distance estimation. ESPHome's component exposes a calibration routine; run it once per physical install. Re-run if the antenna environment changes significantly (new metal in proximity, etc.).
+
+**Mounting considerations** — these are the load-bearing decisions, not the YAML:
+
+- **Keep the antenna away from the ESP32 itself.** The C6's WiFi radio during TX is the loudest disturber source you'll have on this device. Don't share an enclosure with the MCU.
+- **Don't put it inside the Stevenson screen.** Metal mesh proximity messes with the antenna, and you want elevation + an unobstructed RF path.
+- **Suggested layout:** small dedicated outdoor-rated PETG enclosure on the same pole as the rain gauge or Stevenson screen, short Qwiic cable run to the I²C bus, same Flexi Dip waterproofing treatment as the rain gauge inner enclosure.
+
+**Risks to budget for:**
+
+- **False positives from local RF.** Load-shedding switching transients, neighbour's pool pump, your own WiFi during TX. Mitigation: disturber-rejection tuning + physical separation from the MCU. Budget an evening of post-installation tuning before trusting any push-notification automation that fires on detected strikes.
+- **I²C bus contention if cable run is long.** Keep it short. Add pull-ups only if the Qwiic board's are missing or the bus is already pulled up weakly.
+
+**HA integration:** discovery payloads via native API for last strike distance (km), strike count (cumulative), last strike timestamp, last diagnostic event type. Useful HA automation: trigger on `last_strike_distance_km < 20`, condition `(now - last_notification) > 5 min`, action mobile push notification — gives you ~10–20 min warning before a storm closes in.
+
+### Wind speed (cup anemometer) + direction (AS5600 vane) — high-priority post-deployment expansion
+
+**Hardware:**
+- 3D-printed 3-cup head, PETG, lightweight cups (ping-pong-half size on ~50 mm arms), proper miniature shielded ball bearings (MR74ZZ or 623ZZ — Bearing Man Group, Vereeniging). Magnet on cup hub + reed switch in stationary base, same pattern as the tipping bucket.
+- 3D-printed vane on a separate shaft *above* the cups (so cups don't shadow the vane), diametrically-magnetized 6 mm magnet glued to the underside of the vane shaft, AS5600 breakout below in the stationary base with ~1–2 mm air gap to the magnet.
+- Both shafts in a shared PETG body mounted on the highest practical pole (roof line or dedicated mast).
+
+**Architectural changes this introduces:**
+
+Smaller than the lightning detector — both sensors slot cleanly into existing infrastructure:
+
+- **No new wake sources.** The cup-head reed switch is **not** wired as a wake pin. Wind speed is sampled within the existing 5-min timer-wake window (count pulses for ~10 s while awake anyway), not by waking on every pulse. With cups potentially spinning at 20–50 Hz in moderate wind, ext-wake-per-pulse would torch the power budget; sampling within the existing wake cycle is essentially free. This means the wind expansion does NOT depend on the lightning detector's wake-source extensions.
+- **AS5600 on the existing I²C bus.** Address `0x36`, no conflict with BME280 (`0x76`/`0x77`) or AS3935 (`0x03`). Powered from 3V3_C — gated off between wakes alongside the BME280.
+- **`PIN_WIND_PULSE` on a free GPIO** for the cup-head reed (suggest GPIO6 on the C6 — confirm against pinout when wiring). Standard ESPHome `pulse_counter` component, only active during the awake sampling window; no wake-source plumbing.
+
+**ESPHome integration:**
+- **Wind speed:** `pulse_counter` component on the wind pin, configured to sample over a window (~10 s) within each timer wake. Compute pulses-per-second × per-revolution calibration → m/s. 5 ms software debounce on the ISR (cups can spin to ~50 Hz; period 20 ms, so 5 ms is safe).
+- **Gust:** track max pulses-in-any-3-second-window across the 10 s sample (small ring buffer in lambda or via ESPHome's `max` filter on a sub-sampled sensor). Approximates the WMO 3-s gust definition closely enough for amateur use.
+- **Vane reading:** built-in `as5600` component on the I²C bus. One read per timer wake. Subtract a `WIND_NORTH_OFFSET` substitution for physical alignment. Surface the AS5600's `MAGD` / `MH` / `ML` magnet-status bits in startup logs so alignment issues are obvious.
+
+**Calibration:**
+- **Speed:** drive a car at known speed in still air holding the cup head out the window, OR sit beside a handheld anemometer for an afternoon. Adjust the m/s-per-Hz factor — 3D-printed cups will not match the Davis 6410 nominal of 1.006 m/s/Hz.
+- **Direction:** with the head fixed in its final mounting, rotate the vane to point at known compass north and record the AS5600 raw reading; that's `WIND_NORTH_OFFSET`. Decide whether to correct for magnetic declination (Vereeniging is ~−21°) in firmware or in an HA template — either works; pick one and document it.
+
+**Risks to budget for:**
+
+- **Bearing friction is the make-or-break.** If startup wind threshold is high, low-wind readings are useless. Use proper miniature ball bearings (not nylon bushings), balance the cups by mass before assembly, lubricate sparingly with dry PTFE — never WD-40, it attracts dust and fails outdoors within months.
+- **AS5600 magnet alignment.** Must be **diametrically magnetized** (not axial), centered over the chip, ~1–2 mm air gap. The chip's magnet-status bits flag too-strong / too-weak / missing magnet — log them at boot and during the first few publishes so a marginal install reveals itself before deployment.
+- **Reed contact bounce under fast rotation.** 5 ms software debounce handles it, but if pulses look flaky on a scope, a 10 nF cap across the reed terminals smooths things mechanically.
+
+**HA integration:** discovery payloads for wind_speed (m/s), wind_speed_gust (m/s), wind_direction (°). HA template sensors for cardinal direction (N / NE / … / NW), Beaufort scale (0–12), wind chill (when T < 10 °C), and optionally a "non-WMO mounting height" disclaimer attribute so future-you remembers the data isn't taken at the standard 10 m.
+
+### Lower-priority sensors
+
+These are wired-for in the carrier but not on the active roadmap:
+
+- **Soil temperature** (DS18B20): ESPHome's `dallas_temp` component on a one-wire bus.
 - **Soil moisture** (capacitive probe): `adc` component on a free ADC pin, gated on 3V3_C between reads.
-- **UV sensor** (e.g., VEML6075 or LTR390): I²C component on the existing bus, also on 3V3_C.
+- **UV sensor** (VEML6075 or LTR390): I²C component on the existing bus, also on 3V3_C.
 - **Light sensor / LDR** (solar performance proxy, day/night detection): `adc` component.
 
-Power budget allows comfortably for all of these. Wire layout in the carrier should leave room for the additions.
+Power budget allows comfortably for all of these on top of the lightning + wind set. Wire layout should leave room. Field deployment should happen with just the BME280 + tipping bucket first; add expansions one at a time after the base station is stable.
 
 ## Build Stages (sequential, do not parallelize)
 
 Each stage has its own verification gate. Don't advance until the current one is solid.
 
-1. **Stage 0 — Bring-up.** Get an ESPHome YAML compiling and flashing onto the C6 over USB. Use `board: esp32-c6-devkitc-1` with `variant: esp32c6` and `framework: type: esp-idf` — the IDF framework has more mature C6 support in ESPHome than `arduino`. Verify Wi-Fi connects (with `fast_connect: True`), native API talks to HA (device shows up in HA's ESPHome integration), `wifi_signal` and `uptime` sensors visible. Test the OTA path (push a tiny config change, see it install via HA). Set up the `weather_station_deep_sleep` HA helper toggle here so you can stay-awake the device for fast iteration in subsequent stages.
+1. **Stage 0 — Bring-up.** Get an ESPHome YAML compiling and flashing onto the DFR1075 over USB-C. Because there is no dedicated ESPHome/PlatformIO board definition for the DFRobot FireBeetle 2 ESP32-C6, use `board: esp32-c6-devkitc-1` with `variant: esp32c6` and `framework: type: esp-idf` as the generic ESP32-C6 base — the IDF framework has more mature C6 support in ESPHome than `arduino`. **The board ID is just a framework hint — pin mappings on the DFR1075 differ from the generic dev kit and must be set explicitly per the DFRobot wiki ([wiki.dfrobot.com/dfr1075](https://wiki.dfrobot.com/dfr1075/)).** Specifically: I²C on `GPIO19`/`GPIO20`, status LED on `GPIO15`, BOOT button on `GPIO9`, battery ADC on `IO1`, 3V3_C control on `GPIO0` — see the Hardware section. Confirm flash size is 4 MB in the build. Verify Wi-Fi connects (with `fast_connect: True`), native API talks to HA (device shows up in HA's ESPHome integration), `wifi_signal` and `uptime` sensors visible. Test the OTA path (push a tiny config change, see it install via HA). Set up the `weather_station_deep_sleep` HA helper toggle here so you can stay-awake the device for fast iteration in subsequent stages.
 2. **Stage 1 — BME280 over I²C.** Add the `i2c` bus, `bme280_i2c` component on `0x76` or `0x77`. T/H/P sensors appear in HA. Breath test confirms it's a real BME280. Sensible values for Vereeniging at 1500 m (~840 hPa raw).
 3. **Stage 2 — Reed switch tip counting.** `pulse_counter` component on the reed pin, configured for total count. Wave a magnet, count goes up by 1 per pass. HA template sensor multiplies by `mm-per-tip` for rainfall in mm; HA utility meter integrates per-day total.
 4. **Stage 3 — Deep sleep cycle.** `deep_sleep` component with 5-min `sleep_duration` and reed-pin wake. `run_duration` ~15 s (enough for Wi-Fi + native API + publish). Verify on USB power meter: the C6 should hit ~16 µA during sleep. Tip count survives sleep cycles.
@@ -269,8 +328,9 @@ Each stage has its own verification gate. Don't advance until the current one is
 6. **Stage 5 — Solar input + Schottky diode.** Hardware-only: 1N5817 in series with the panel, into VIN. Confirm via the battery voltage sensor that charging happens during sun.
 7. **Stage 6 — Mechanical assembly.** 3D-printed inner enclosure inside outer rain gauge body, Stevenson screen, Flexi Dip waterproofing, cable runs with drip loop.
 8. **Stage 7 — Field deployment + calibration.** Side-by-side BME280 calibration with a reference for 1–2 days. Tipping bucket calibration: pour known volume, count tips, compute mm-per-tip. Mounting: 30 cm rim height for the rain gauge, 1.5 m on grass for the Stevenson screen.
-9. **Stage 8 — Lightning detector (post-deployment).** AS3935 on the always-on 3V3 rail, IRQ pin as a deep-sleep wake. ESPHome's `as3935_i2c` component handles the I²C protocol and event types. HA automation: push notification when last strike distance < 20 km.
-10. **Stage 9 — Wind speed + direction (post-deployment).** Cup head with reed switch + `pulse_counter` (sample within the awake window — 10 s pulse count converted to m/s). AS5600 magnetic encoder on the existing I²C bus for direction. HA template sensors for cardinal direction, Beaufort scale, wind chill.
+9. **Stage 8 — Lightning detector (post-deployment).** Adds the AS3935 on the always-on 3V3 rail (NOT 3V3_C), wires the IRQ to a free LP-IO pin as a third deep-sleep wake source alongside timer + reed. ESPHome's `as3935_i2c` component handles the chip protocol; LCO antenna calibration runs once per install. Wake-cause branching extends to distinguish lightning from reed. Mounting in a separate enclosure on the same pole, away from the C6's WiFi radio. HA automation fires push notification when last strike distance < 20 km. See "Future Expansion" section above for the architectural deltas, mounting constraints, false-positive risks (load-shedding transients, neighbour pool pumps), and budget for an evening of disturber-rejection tuning post-install.
+10. **Stage 9 — Wind speed + direction (post-deployment).** Adds a 3-cup anemometer on a roof-mounted mast and an AS5600 magnetic-encoder vane above it. Wind speed via `pulse_counter` sampling within the existing 10 s awake window — NOT a deep-sleep wake source (cups at 50 Hz would torch the power budget). Wind vane via `as5600` on the existing I²C bus. Calibration is the work: bearing friction must be low (proper miniature ball bearings, dry PTFE only), AS5600 magnet must be diametrically magnetized and well-aligned, m/s-per-Hz factor calibrated against a handheld anemometer or a known-speed drive. See "Future Expansion" section for the full hardware design, magnet-status logging, and HA integration (Beaufort scale, wind chill, mounting-height disclaimer).
+11. **Stage 10 — Lower-priority sensors (later, as needed).** Soil temperature (DS18B20), soil moisture (capacitive ADC), UV (VEML6075/LTR390), LDR. All slot onto the existing I²C bus or free ADC pins, all gated on 3V3_C. Each is a YAML-component-add operation; no architectural changes. Defer until the base station + wind + lightning are deployed and stable.
 
 ## ESPHome Conventions
 
