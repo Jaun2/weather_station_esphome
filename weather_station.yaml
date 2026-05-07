@@ -69,6 +69,7 @@ deep_sleep:
   wakeup_pin:
     number: GPIO4
     inverted: true              # wake on falling edge (reed-to-GND closure)
+    allow_other_uses: true      # also used by the Rain Bucket binary_sensor
     mode:
       input: true
       pullup: true
@@ -118,6 +119,7 @@ binary_sensor:
   - platform: gpio
     pin:
       number: GPIO4
+      allow_other_uses: true        # also used by deep_sleep wakeup_pin
       mode:
         input: true
         pullup: true
@@ -149,7 +151,7 @@ binary_sensor:
   - platform: homeassistant
     id: deep_sleep_enable
     entity_id: input_boolean.weather_station_deep_sleep
-    publish_initial_state: true
+    trigger_on_initial_state: true
     on_state:
       then:
         - if:
