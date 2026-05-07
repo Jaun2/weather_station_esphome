@@ -146,6 +146,20 @@ binary_sensor:
             id(rain_session_tips) += 1;
             id(rain_tips_total) += 1;
 
+  - platform: homeassistant
+    id: deep_sleep_enable
+    entity_id: input_boolean.weather_station_deep_sleep
+    publish_initial_state: true
+    on_state:
+      then:
+        - if:
+            condition:
+              lambda: 'return x;'
+            then:
+              - deep_sleep.allow: deep_sleep_ctl
+            else:
+              - deep_sleep.prevent: deep_sleep_ctl
+
 button:
   - platform: restart
     name: "Restart"
