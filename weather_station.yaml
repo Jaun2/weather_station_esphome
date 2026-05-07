@@ -183,6 +183,7 @@ sensor:
   - platform: template
     name: "Heat Index"
     id: heat_index
+    icon: mdi:weather-sunny-alert
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -211,6 +212,7 @@ sensor:
   - platform: template
     name: "Frost Point"
     id: frost_point
+    icon: mdi:snowflake-thermometer
     unit_of_measurement: "°C"
     device_class: temperature
     state_class: measurement
@@ -229,6 +231,7 @@ sensor:
 
   - platform: template
     name: "Fog Probability"
+    icon: mdi:weather-fog
     unit_of_measurement: "%"
     state_class: measurement
     accuracy_decimals: 0
@@ -245,6 +248,7 @@ sensor:
 
   - platform: template
     name: "Rain Likelihood"
+    icon: mdi:cloud-percent-outline
     unit_of_measurement: "%"
     state_class: measurement
     accuracy_decimals: 0
@@ -296,6 +300,7 @@ sensor:
 
   - platform: template
     name: "Rainfall"
+    icon: mdi:weather-pouring
     unit_of_measurement: "mm"
     accuracy_decimals: 2
     state_class: total_increasing
@@ -305,6 +310,7 @@ sensor:
 
   - platform: template
     name: "Rainfall Session"
+    icon: mdi:weather-pouring
     unit_of_measurement: "mm"
     accuracy_decimals: 2
     state_class: measurement
@@ -329,6 +335,7 @@ text_sensor:
 
   - platform: template
     name: "Heat Index Category"
+    icon: mdi:weather-sunny-alert
     update_interval: 10s
     lambda: |-
       float hi = id(heat_index).state;
@@ -342,6 +349,7 @@ text_sensor:
 
   - platform: template
     name: "Frost Point Category"
+    icon: mdi:snowflake-alert
     update_interval: 10s
     lambda: |-
       float fp = id(frost_point).state;
@@ -354,6 +362,7 @@ text_sensor:
 
   - platform: template
     name: "Rain Intensity"
+    icon: mdi:cloud-alert-outline
     update_interval: 10s
     lambda: |-
       float rate = id(ha_rainfall_rate).state;
