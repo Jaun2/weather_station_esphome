@@ -328,12 +328,23 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     setup_priority: -200
-    update_interval: 10s        # 'never' was a trap — it truly means never;
-                                # 10 s gives 2 samples per 25 s wake window
-                                # which is more than enough for one publish.
+    update_interval: 5s         # 5 s + 25 s wake = 5 software samples per
+                                # wake; enough for the median filter below
+                                # to reject outliers and converge.
     attenuation: 12db
+    samples: 64                 # hardware oversampling: average 64 ADC
+                                # conversions per software sample. ESP32-C6
+                                # ADCs have ~±20 mV single-sample noise;
+                                # 64 samples drops it to ~±2.5 mV (~√64
+                                # improvement). Cost: ~0.6 ms per sample.
     filters:
       - multiply: ${battery_divider_ratio}
+      - median:                 # discard outliers from any remaining noise
+          window_size: 5        # spike or WiFi-induced transient. With 5
+          send_every: 1         # samples per wake the window fills mid-wake
+          send_first_at: 1      # and the published value reflects the
+                                # median of available samples from sample 1
+                                # onward (ramps up to a true 5-wide median).
     on_value:
       then:
         - if:
@@ -359,9 +370,9 @@ sensor:
     device_class: battery
     state_class: measurement
     entity_category: diagnostic
-    update_interval: 10s            # match battery_voltage's cadence so the
-                                    # percentage doesn't lag behind voltage
-                                    # for up to a minute after each wake.
+    update_interval: 5s             # match battery_voltage's cadence so the
+                                    # percentage stays in sync with the
+                                    # smoothed voltage value.
     lambda: |-
       float v = id(battery_voltage).state;
       if (isnan(v)) return NAN;
@@ -386,10 +397,20 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     setup_priority: -200
-    update_interval: 10s
+    update_interval: 5s
     attenuation: 12db
+    samples: 64                  # hardware oversampling — same reasoning as
+                                 # the battery ADC. Reduces single-sample
+                                 # noise from ~±20 mV to ~±2.5 mV.
     filters:
       - multiply: ${solar_divider_ratio}
+      - sliding_window_moving_average:
+          # Lighter smoothing than battery — solar voltage genuinely changes
+          # with cloud cover, panel angle, etc., and we want the chip to
+          # respond to those real variations rather than swallow them.
+          window_size: 3
+          send_every: 1
+          send_first_at: 1
 
   # Derived metrics — computed in firmware so they appear on the device card
   # alongside Temperature/Humidity/Pressure. Lambdas reference the BME280's
