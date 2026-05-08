@@ -82,6 +82,19 @@ sensor:
     unit_time: h
     round: 2
 
+  # Rolling 24-hour rainfall total. state_characteristic: change gives the
+  # delta of the source sensor (Rainfall, cumulative mm) over max_age.
+  # The firmware subscribes to this via platform: homeassistant and
+  # republishes it on the device card as "Rainfall 24h".
+  - platform: statistics
+    name: "Weather Station Rainfall 24h Source"
+    unique_id: weather_station_rainfall_24h_source
+    entity_id: sensor.weather_station_rainfall
+    state_characteristic: change
+    max_age:
+      hours: 24
+    sampling_size: 8640
+
 # Daily-reset rainfall total. Source is the cumulative `Rainfall` sensor
 # published by the device firmware (with state_class: total_increasing).
 # Stage 2.
