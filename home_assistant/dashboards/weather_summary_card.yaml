@@ -272,7 +272,7 @@ cards:
           // accumulated (rainfall_session = 0, eg. fresh install).
           const sessionLabel = isRaining ? 'Session' : 'Last session';
           const sessionPart = (!isNaN(session) && session > 0)
-            ? `${sessionLabel} ${Math.round(session)} mm  ·  `
+            ? `${sessionLabel}: ${Math.round(session)} mm  ·  `
             : '';
 
           // Overall row dims when there's been no recent rain. Today is
@@ -285,7 +285,7 @@ cards:
               <ha-icon icon="mdi:water" style="--mdc-icon-size: 22px; color: ${iconColor};"></ha-icon>
               <div style="font-size: 0.95em;">
                 <span style="font-weight: 500;">Rainfall</span>
-                <span style="opacity: 0.75; margin-left: 8px;">${sessionPart}Today ${todayDisp} mm  ·  24h ${last24hDisp} mm</span>
+                <span style="opacity: 0.75; margin-left: 8px;">${sessionPart}Today: ${todayDisp} mm  ·  24h: ${last24hDisp} mm</span>
               </div>
             </div>
           `;
