@@ -298,28 +298,22 @@ cards:
   # ─────────────────────────────────────────────────────────────────
   - type: custom:mushroom-chips-card
     chips:
-      - type: conditional
-        conditions:
-          - condition: state
-            entity: sensor.weather_station_rain_likelihood
-            state_not: unknown
-          - condition: state
-            entity: sensor.weather_station_rain_likelihood
-            state_not: unavailable
-        chip:
-          type: template
+      # Rain Likelihood — always visible, even at 0%, per user request.
+      # Falls back to 0% display if the entity is briefly unknown
+      # (e.g. immediately after a wake before BME280 has read).
+      - type: template
+        entity: sensor.weather_station_rain_likelihood
+        icon: mdi:cloud-percent-outline
+        icon_color: |-
+          {% set p = states('sensor.weather_station_rain_likelihood') | float(0) %}
+          {% if p >= 70 %}blue
+          {% elif p >= 40 %}cyan
+          {% else %}grey
+          {% endif %}
+        content: "Rain {{ states('sensor.weather_station_rain_likelihood') | float(0) | round(0) | int }}%"
+        tap_action:
+          action: more-info
           entity: sensor.weather_station_rain_likelihood
-          icon: mdi:cloud-percent-outline
-          icon_color: |-
-            {% set p = states('sensor.weather_station_rain_likelihood') | float(0) %}
-            {% if p >= 70 %}blue
-            {% elif p >= 40 %}cyan
-            {% else %}grey
-            {% endif %}
-          content: "Rain {{ states('sensor.weather_station_rain_likelihood') | float | round(0) | int }}%"
-          tap_action:
-            action: more-info
-            entity: sensor.weather_station_rain_likelihood
 
       - type: conditional
         conditions:
