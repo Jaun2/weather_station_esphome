@@ -1,302 +1,304 @@
-# Weather Station — Summary Widget for Lovelace
+# Weather Station — Polished Summary Widget
 #
-# Drop-in dashboard card built on Mushroom Cards (HACS).
+# Unified dashboard card built on:
+#   - custom:button-card  (HACS)  — for grid-based custom layouts
+#   - custom:stack-in-card (HACS) — to merge sub-cards into one visual block
 #
-# Design rules:
-#   • The card is always informative; chips that depend on derived
-#     values hide cleanly when their source isn't available.
-#   • Chance of rain and Feels-like temperature always show — they
-#     are core "what's the weather right now" indicators.
-#   • The "It's raining" panel only appears when actually raining,
-#     and prominently shows the rain intensity.
+# Layout (rendered top-to-bottom in one cohesive widget):
+#   ┌──────────────────────────────────────────────┐
+#   │ Weather Station         🔋 100% ⚡ 📶 86%   │  ← title + system chips
+#   ├──────────────────────────────────────────────┤
+#   │ ☀ 17.5°C        💧 38%   🌪 852 hPa          │  ← temp + stats
+#   │   Feels like 16.0°C    ☁ Rain prob 33%       │
+#   │   Clear                  🌫 Fog risk 0%       │
+#   ├──────────────────────────────────────────────┤
+#   │ 🌧 It's raining right now (Drizzle)          │  ← conditional, only when raining
+#   ├──────────────────────────────────────────────┤
+#   │ ☀ Heat: Caution / Heat index 32.5°C          │  ← conditional, only when applicable
+#   ├──────────────────────────────────────────────┤
+#   │ ❄ Frost: Light Frost / Frost point -1.2°C    │  ← conditional, only when applicable
+#   ├──────────────────────────────────────────────┤
+#   │ 🌅 Sunrise 06:42        🌇 Sunset 17:35      │  ← always shown
+#   └──────────────────────────────────────────────┘
 #
-# How to use:
-#   1. In Home Assistant, edit your dashboard.
+# Required HACS frontends:
+#   - button-card        : https://github.com/custom-cards/button-card
+#   - stack-in-card      : https://github.com/custom-cards/stack-in-card
+#
+# Both install in HACS → Frontend → Search → Download → Restart HA.
+#
+# To install:
+#   1. Edit your dashboard.
 #   2. Add Card → Manual.
-#   3. Paste the entire YAML below (everything from `type: vertical-stack`
-#      to the end of the file).
+#   3. Paste from `type: custom:stack-in-card` to end-of-file.
 #   4. Save.
-#
-# Requires:
-#   - The Weather Station ESPHome integration.
-#   - HACS + Mushroom Cards installed.
 
-type: vertical-stack
+type: custom:stack-in-card
+mode: vertical
+keep:
+  background: false
+  border_radius: true
+  box_shadow: true
+  margin: true
+  outer_padding: false
 cards:
   # ─────────────────────────────────────────────────────────────────
-  # Title
+  # Header row: title + system status chips
   # ─────────────────────────────────────────────────────────────────
-  - type: custom:mushroom-title-card
-    title: Weather Station
-    subtitle: Vereeniging
+  - type: custom:button-card
+    show_name: false
+    show_state: false
+    show_icon: false
+    styles:
+      card:
+        - padding: 16px 20px 12px 20px
+        - background: transparent
+        - box-shadow: none
+        - border-radius: 0
+        - height: auto
+      grid:
+        - grid-template-areas: '"title status"'
+        - grid-template-columns: 1fr auto
+        - align-items: center
+    custom_fields:
+      title: |
+        [[[
+          return `
+            <div style="text-align: left;">
+              <div style="font-size: 1.3em; font-weight: 600; line-height: 1.2;">Weather Station</div>
+              <div style="opacity: 0.55; font-size: 0.82em; margin-top: 2px;">Vereeniging</div>
+            </div>
+          `;
+        ]]]
+      status: |
+        [[[
+          const get = (id) => states[id] ? states[id].state : 'unknown';
+          const num = (id, dflt = 0) => {
+            const s = get(id);
+            return (s === 'unknown' || s === 'unavailable') ? dflt : parseFloat(s);
+          };
+
+          const batt = num('sensor.weather_station_battery');
+          const charging = get('binary_sensor.weather_station_charging') === 'on';
+          const wifi = num('sensor.weather_station_wi_fi_signal_strength');
+
+          // Battery icon scales with charge level
+          let battIcon = 'mdi:battery-alert';
+          if (batt > 90) battIcon = 'mdi:battery';
+          else if (batt > 70) battIcon = 'mdi:battery-80';
+          else if (batt > 50) battIcon = 'mdi:battery-60';
+          else if (batt > 30) battIcon = 'mdi:battery-40';
+          else if (batt > 10) battIcon = 'mdi:battery-20';
+
+          const battColor = batt > 50 ? '#4caf50' : batt > 20 ? '#ff9800' : '#f44336';
+          const chargeColor = charging ? '#4caf50' : 'rgba(255,255,255,0.25)';
+          const wifiColor = wifi > 50 ? '#4caf50' : wifi > 25 ? '#ff9800' : '#f44336';
+
+          return `
+            <div style="display: flex; gap: 14px; align-items: center; font-size: 0.85em; opacity: 0.95;">
+              <span title="Charging">
+                <ha-icon icon="mdi:solar-power-variant" style="--mdc-icon-size: 20px; color: ${chargeColor};"></ha-icon>
+              </span>
+              <span style="display: inline-flex; align-items: center; gap: 4px;" title="Battery">
+                <ha-icon icon="${battIcon}" style="--mdc-icon-size: 20px; color: ${battColor};"></ha-icon>
+                ${batt.toFixed(0)}%
+              </span>
+              <span style="display: inline-flex; align-items: center; gap: 4px;" title="Wi-Fi">
+                <ha-icon icon="mdi:wifi" style="--mdc-icon-size: 20px; color: ${wifiColor};"></ha-icon>
+                ${wifi.toFixed(0)}%
+              </span>
+            </div>
+          `;
+        ]]]
 
   # ─────────────────────────────────────────────────────────────────
-  # System status row — charging, battery, Wi-Fi
-  # Conditional chips use the simpler entity/state_not form (no
-  # `condition: state` prefix) — Mushroom's conditional chip parser
-  # accepts only that shorthand.
+  # Main weather block — big temp on the left, stats on the right
   # ─────────────────────────────────────────────────────────────────
-  - type: custom:mushroom-chips-card
-    alignment: end
-    chips:
-      - type: conditional
-        conditions:
-          - entity: binary_sensor.weather_station_charging
-            state_not: unknown
-          - entity: binary_sensor.weather_station_charging
-            state_not: unavailable
-        chip:
-          type: template
-          icon: mdi:solar-power-variant
-          icon_color: |-
-            {% if is_state('binary_sensor.weather_station_charging', 'on') %}
-            green
-            {% else %}
-            disabled
-            {% endif %}
-          content: |-
-            {% if is_state('binary_sensor.weather_station_charging', 'on') %}
-            Charging
-            {% else %}
-            Idle
-            {% endif %}
-          tap_action:
-            action: more-info
-            entity: binary_sensor.weather_station_charging
-
-      - type: conditional
-        conditions:
-          - entity: sensor.weather_station_battery
-            state_not: unknown
-          - entity: sensor.weather_station_battery
-            state_not: unavailable
-        chip:
-          type: template
-          icon: |-
-            {% set p = states('sensor.weather_station_battery') | float(0) %}
-            {% if p > 90 %}mdi:battery
-            {% elif p > 70 %}mdi:battery-80
-            {% elif p > 50 %}mdi:battery-60
-            {% elif p > 30 %}mdi:battery-40
-            {% elif p > 10 %}mdi:battery-20
-            {% else %}mdi:battery-alert
-            {% endif %}
-          icon_color: |-
-            {% set p = states('sensor.weather_station_battery') | float(0) %}
-            {% if p > 50 %}green
-            {% elif p > 20 %}orange
-            {% else %}red
-            {% endif %}
-          content: "{{ states('sensor.weather_station_battery') | int(0) }}%"
-          tap_action:
-            action: more-info
-            entity: sensor.weather_station_battery
-
-      - type: conditional
-        conditions:
-          - entity: sensor.weather_station_wi_fi_signal_strength
-            state_not: unknown
-          - entity: sensor.weather_station_wi_fi_signal_strength
-            state_not: unavailable
-        chip:
-          type: template
-          icon: |-
-            {% set s = states('sensor.weather_station_wi_fi_signal_strength') | float(0) %}
-            {% if s > 70 %}mdi:wifi-strength-4
-            {% elif s > 50 %}mdi:wifi-strength-3
-            {% elif s > 30 %}mdi:wifi-strength-2
-            {% elif s > 0 %}mdi:wifi-strength-1
-            {% else %}mdi:wifi-strength-outline
-            {% endif %}
-          icon_color: |-
-            {% set s = states('sensor.weather_station_wi_fi_signal_strength') | float(0) %}
-            {% if s > 50 %}green
-            {% elif s > 25 %}orange
-            {% else %}red
-            {% endif %}
-          content: "{{ states('sensor.weather_station_wi_fi_signal_strength') | int(0) }}%"
-          tap_action:
-            action: more-info
-            entity: sensor.weather_station_wi_fi_signal_strength
-
-  # ─────────────────────────────────────────────────────────────────
-  # Big current temperature with Feels Like always visible.
-  # Single-line secondary template avoids the leading-newline issue
-  # that hid the line in the previous version.
-  # ─────────────────────────────────────────────────────────────────
-  - type: custom:mushroom-template-card
-    primary: "{{ states('sensor.weather_station_temperature') | float(0) | round(1) }}°C"
-    secondary: "Feels like {{ states('sensor.weather_station_feels_like_2') | float(0) | round(1) }}°C"
-    icon: mdi:thermometer
-    icon_color: |-
-      {% set t = states('sensor.weather_station_temperature') | float(0) %}
-      {% if t >= 30 %}red
-      {% elif t >= 20 %}orange
-      {% elif t >= 10 %}amber
-      {% elif t >= 0 %}blue
-      {% else %}indigo
-      {% endif %}
-    fill_container: true
+  - type: custom:button-card
+    show_name: false
+    show_state: false
+    show_icon: false
     tap_action:
       action: more-info
       entity: sensor.weather_station_temperature
+    styles:
+      card:
+        - padding: 8px 20px 20px 20px
+        - background: transparent
+        - box-shadow: none
+        - border-radius: 0
+        - height: auto
+      grid:
+        - grid-template-areas: '"weather"'
+        - grid-template-columns: 1fr
+    custom_fields:
+      weather: |
+        [[[
+          const get = (id) => states[id] ? states[id].state : 'unknown';
+          const num = (id, dflt = NaN) => {
+            const s = get(id);
+            return (s === 'unknown' || s === 'unavailable') ? dflt : parseFloat(s);
+          };
+
+          const temp = num('sensor.weather_station_temperature');
+          const feels = num('sensor.weather_station_feels_like_2');
+          const visibility = get('sensor.weather_station_visibility_2');
+          const visibilityDisplay = (visibility === 'unknown' || visibility === 'unavailable') ? '' : visibility;
+          const hum = num('sensor.weather_station_humidity');
+          const press = num('sensor.weather_station_pressure');
+          const rainprob = num('sensor.weather_station_rain_likelihood_2', 0);
+          const fograte = num('sensor.weather_station_fog_probability_2', 0);
+
+          // Weather icon based on visibility + rain
+          const isRaining = get('binary_sensor.weather_station_is_raining') === 'on';
+          let weatherIcon = 'mdi:weather-sunny';
+          let iconColor = '#ffd54f';
+          if (isRaining) {
+            weatherIcon = 'mdi:weather-pouring';
+            iconColor = '#42a5f5';
+          } else if (visibility === 'Fog' || visibility === 'Mist') {
+            weatherIcon = 'mdi:weather-fog';
+            iconColor = '#90a4ae';
+          } else if (visibility === 'Haze') {
+            weatherIcon = 'mdi:weather-hazy';
+            iconColor = '#ffb74d';
+          }
+
+          // Temperature color
+          let tempColor = '#90caf9';
+          if (temp >= 30) tempColor = '#ef5350';
+          else if (temp >= 20) tempColor = '#ffa726';
+          else if (temp >= 10) tempColor = '#ffd54f';
+          else if (temp < 0) tempColor = '#7986cb';
+
+          // Rain probability color
+          const rainColor = rainprob >= 70 ? '#42a5f5' : rainprob >= 40 ? '#4dd0e1' : 'rgba(255,255,255,0.55)';
+          // Fog risk color
+          const fogColor = fograte >= 70 ? '#90a4ae' : fograte >= 40 ? '#78909c' : 'rgba(255,255,255,0.55)';
+
+          const tempDisp = isNaN(temp) ? '--' : `${temp.toFixed(1)}°C`;
+          const feelsDisp = isNaN(feels) ? '' : `Feels like ${feels.toFixed(1)}°C`;
+          const humDisp = isNaN(hum) ? '--' : `${hum.toFixed(0)}%`;
+          const pressDisp = isNaN(press) ? '--' : `${press.toFixed(0)} hPa`;
+
+          return `
+            <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center;">
+              <ha-icon icon="${weatherIcon}" style="--mdc-icon-size: 64px; color: ${iconColor}; flex-shrink: 0;"></ha-icon>
+              <div style="min-width: 0;">
+                <div style="font-size: 2.4em; font-weight: 700; line-height: 1; color: ${tempColor};">${tempDisp}</div>
+                <div style="opacity: 0.72; font-size: 0.92em; margin-top: 6px;">${feelsDisp}</div>
+                <div style="opacity: 0.5; font-size: 0.85em; margin-top: 2px;">${visibilityDisplay}</div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr; row-gap: 6px; font-size: 0.9em;">
+                <div style="display: flex; align-items: center; gap: 6px; justify-content: end;">
+                  <ha-icon icon="mdi:water-percent" style="--mdc-icon-size: 18px; color: #64b5f6;"></ha-icon>
+                  <span>${humDisp}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px; justify-content: end;">
+                  <ha-icon icon="mdi:gauge" style="--mdc-icon-size: 18px; color: #9fa8da;"></ha-icon>
+                  <span>${pressDisp}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px; justify-content: end;">
+                  <ha-icon icon="mdi:cloud-percent-outline" style="--mdc-icon-size: 18px; color: ${rainColor};"></ha-icon>
+                  <span>Rain ${rainprob.toFixed(0)}%</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px; justify-content: end;">
+                  <ha-icon icon="mdi:weather-fog" style="--mdc-icon-size: 18px; color: ${fogColor};"></ha-icon>
+                  <span>Fog ${fograte.toFixed(0)}%</span>
+                </div>
+              </div>
+            </div>
+          `;
+        ]]]
 
   # ─────────────────────────────────────────────────────────────────
-  # Atmosphere chips — Visibility, Humidity, Pressure.
-  # Conditional chips hide individually when their source is unknown.
+  # Rainfall summary — always shown, dims when zero
   # ─────────────────────────────────────────────────────────────────
-  - type: custom:mushroom-chips-card
-    chips:
-      - type: conditional
-        conditions:
-          - entity: sensor.weather_station_visibility_2
-            state_not: unknown
-          - entity: sensor.weather_station_visibility_2
-            state_not: unavailable
-        chip:
-          type: template
-          entity: sensor.weather_station_visibility_2
-          icon: |-
-            {% set v = states('sensor.weather_station_visibility_2') %}
-            {% if v == 'Fog' %}mdi:weather-fog
-            {% elif v == 'Mist' %}mdi:weather-fog
-            {% elif v == 'Haze' %}mdi:weather-hazy
-            {% else %}mdi:weather-sunny
-            {% endif %}
-          icon_color: |-
-            {% set v = states('sensor.weather_station_visibility_2') %}
-            {% if v in ['Fog', 'Mist'] %}grey
-            {% elif v == 'Haze' %}orange
-            {% else %}amber
-            {% endif %}
-          content: "{{ states('sensor.weather_station_visibility_2') }}"
-          tap_action:
-            action: more-info
-            entity: sensor.weather_station_visibility_2
+  - type: custom:button-card
+    show_name: false
+    show_state: false
+    show_icon: false
+    tap_action:
+      action: more-info
+      entity: sensor.weather_station_rainfall_today
+    styles:
+      card:
+        - padding: 10px 20px
+        - background: transparent
+        - box-shadow: none
+        - border-radius: 0
+        - height: auto
+        - border-top: 1px solid rgba(255, 255, 255, 0.08)
+      grid:
+        - grid-template-areas: '"rainfall"'
+    custom_fields:
+      rainfall: |
+        [[[
+          const num = (id) => {
+            const s = states[id] ? states[id].state : 'unknown';
+            return (s === 'unknown' || s === 'unavailable') ? NaN : parseFloat(s);
+          };
+          const today = num('sensor.weather_station_rainfall_today');
+          const last24h = num('sensor.weather_station_rainfall_24h');
+          const todayDisp = isNaN(today) ? '--' : today.toFixed(2);
+          const last24hDisp = isNaN(last24h) ? '--' : last24h.toFixed(2);
 
-      - type: conditional
-        conditions:
-          - entity: sensor.weather_station_humidity
-            state_not: unknown
-          - entity: sensor.weather_station_humidity
-            state_not: unavailable
-        chip:
-          type: template
-          entity: sensor.weather_station_humidity
-          icon: mdi:water-percent
-          icon_color: blue
-          content: "{{ states('sensor.weather_station_humidity') | float(0) | round(0) }}%"
-          tap_action:
-            action: more-info
-            entity: sensor.weather_station_humidity
+          const opacity = today > 0 ? 1 : 0.5;
+          const iconColor = today > 5 ? '#42a5f5' : today > 0 ? '#4dd0e1' : 'rgba(255,255,255,0.4)';
 
-      - type: conditional
-        conditions:
-          - entity: sensor.weather_station_pressure
-            state_not: unknown
-          - entity: sensor.weather_station_pressure
-            state_not: unavailable
-        chip:
-          type: template
-          entity: sensor.weather_station_pressure
-          icon: mdi:gauge
-          icon_color: indigo
-          content: "{{ states('sensor.weather_station_pressure') | float(0) | round(0) }} hPa"
-          tap_action:
-            action: more-info
-            entity: sensor.weather_station_pressure
+          return `
+            <div style="display: flex; align-items: center; gap: 12px; opacity: ${opacity};">
+              <ha-icon icon="mdi:water" style="--mdc-icon-size: 22px; color: ${iconColor};"></ha-icon>
+              <div style="font-size: 0.95em;">
+                <span style="font-weight: 500;">Rainfall</span>
+                <span style="opacity: 0.75; margin-left: 8px;">Today ${todayDisp} mm  ·  24h ${last24hDisp} mm</span>
+              </div>
+            </div>
+          `;
+        ]]]
 
   # ─────────────────────────────────────────────────────────────────
-  # "It's raining" — only renders when actively raining. Primary
-  # confirms the rain status, secondary shows the intensity
-  # (Drizzle / Moderate / Heavy / Storm) right below.
+  # Conditional: actively raining
   # ─────────────────────────────────────────────────────────────────
   - type: conditional
     conditions:
       - entity: binary_sensor.weather_station_is_raining
         state: 'on'
     card:
-      type: custom:mushroom-template-card
-      primary: It's raining right now
-      secondary: "{{ states('sensor.weather_station_rain_intensity') }}"
-      icon: mdi:weather-pouring
-      icon_color: blue
-      fill_container: true
+      type: custom:button-card
+      show_name: false
+      show_state: false
+      show_icon: false
       tap_action:
         action: more-info
         entity: sensor.weather_station_rain_intensity
+      styles:
+        card:
+          - padding: 12px 20px
+          - background: rgba(33, 150, 243, 0.08)
+          - box-shadow: none
+          - border-radius: 0
+          - height: auto
+          - border-top: 1px solid rgba(255, 255, 255, 0.08)
+        grid:
+          - grid-template-areas: '"content"'
+      custom_fields:
+        content: |
+          [[[
+            const intensity = states['sensor.weather_station_rain_intensity'].state;
+            return `
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <ha-icon icon="mdi:weather-pouring" style="--mdc-icon-size: 28px; color: #2196f3;"></ha-icon>
+                <div>
+                  <div style="font-weight: 600;">It's raining right now</div>
+                  <div style="opacity: 0.8; font-size: 0.9em;">${intensity}</div>
+                </div>
+              </div>
+            `;
+          ]]]
 
   # ─────────────────────────────────────────────────────────────────
-  # Rainfall summary — today + last 24 h
-  # ─────────────────────────────────────────────────────────────────
-  - type: conditional
-    conditions:
-      - entity: sensor.weather_station_rainfall_today
-        state_not: unknown
-      - entity: sensor.weather_station_rainfall_today
-        state_not: unavailable
-    card:
-      type: custom:mushroom-template-card
-      primary: Rainfall
-      secondary: "Today: {{ states('sensor.weather_station_rainfall_today') | float(0) | round(2) }} mm  ·  24h: {{ states('sensor.weather_station_rainfall_24h') | float(0) | round(2) }} mm"
-      icon: mdi:water
-      icon_color: |-
-        {% set today = states('sensor.weather_station_rainfall_today') | float(0) %}
-        {% if today > 5 %}blue
-        {% elif today > 0 %}cyan
-        {% else %}disabled
-        {% endif %}
-      tap_action:
-        action: more-info
-        entity: sensor.weather_station_rainfall_today
-
-  # ─────────────────────────────────────────────────────────────────
-  # Forecast hint chips.
-  #   • Chance of rain — always visible, even at 0% (per user request).
-  #   • Fog probability — hides when source is unknown.
-  # ─────────────────────────────────────────────────────────────────
-  - type: custom:mushroom-chips-card
-    chips:
-      # Chance of rain — always visible, no conditional wrapper.
-      - type: template
-        entity: sensor.weather_station_rain_likelihood_2
-        icon: mdi:cloud-percent-outline
-        icon_color: |-
-          {% set p = states('sensor.weather_station_rain_likelihood_2') | float(0) %}
-          {% if p >= 70 %}blue
-          {% elif p >= 40 %}cyan
-          {% else %}grey
-          {% endif %}
-        content: "Rain probability {{ states('sensor.weather_station_rain_likelihood_2') | float(0) | round(0) | int }}%"
-        tap_action:
-          action: more-info
-          entity: sensor.weather_station_rain_likelihood_2
-
-      - type: conditional
-        conditions:
-          - entity: sensor.weather_station_fog_probability_2
-            state_not: unknown
-          - entity: sensor.weather_station_fog_probability_2
-            state_not: unavailable
-        chip:
-          type: template
-          entity: sensor.weather_station_fog_probability_2
-          icon: mdi:weather-fog
-          icon_color: |-
-            {% set p = states('sensor.weather_station_fog_probability_2') | float(0) %}
-            {% if p >= 70 %}grey
-            {% elif p >= 40 %}blue-grey
-            {% else %}disabled
-            {% endif %}
-          content: "Fog risk {{ states('sensor.weather_station_fog_probability_2') | float(0) | round(0) | int }}%"
-          tap_action:
-            action: more-info
-            entity: sensor.weather_station_fog_probability_2
-
-  # ─────────────────────────────────────────────────────────────────
-  # Heat warning — built-in HA conditional card. Multiple state_not
-  # conditions are AND-ed, so the card only renders when the category
-  # is none of the excluded values.
+  # Conditional: heat warning
   # ─────────────────────────────────────────────────────────────────
   - type: conditional
     conditions:
@@ -307,24 +309,45 @@ cards:
       - entity: sensor.weather_station_heat_index_category
         state_not: unavailable
     card:
-      type: custom:mushroom-template-card
-      primary: "Heat: {{ states('sensor.weather_station_heat_index_category') }}"
-      secondary: "Heat index {{ states('sensor.weather_station_heat_index_2') | float(0) | round(1) }}°C"
-      icon: mdi:weather-sunny-alert
-      icon_color: |-
-        {% set c = states('sensor.weather_station_heat_index_category') %}
-        {% if c == 'Caution' %}yellow
-        {% elif c == 'Extreme Caution' %}orange
-        {% elif c == 'Danger' %}red
-        {% else %}deep-purple
-        {% endif %}
-      fill_container: true
+      type: custom:button-card
+      show_name: false
+      show_state: false
+      show_icon: false
       tap_action:
         action: more-info
         entity: sensor.weather_station_heat_index_2
+      styles:
+        card:
+          - padding: 12px 20px
+          - background: rgba(255, 152, 0, 0.08)
+          - box-shadow: none
+          - border-radius: 0
+          - height: auto
+          - border-top: 1px solid rgba(255, 255, 255, 0.08)
+        grid:
+          - grid-template-areas: '"content"'
+      custom_fields:
+        content: |
+          [[[
+            const cat = states['sensor.weather_station_heat_index_category'].state;
+            const hi = parseFloat(states['sensor.weather_station_heat_index_2'].state).toFixed(1);
+            let color = '#ffc107';
+            if (cat === 'Danger') color = '#f44336';
+            else if (cat === 'Extreme Danger') color = '#b71c1c';
+            else if (cat === 'Extreme Caution') color = '#ff9800';
+            return `
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <ha-icon icon="mdi:weather-sunny-alert" style="--mdc-icon-size: 28px; color: ${color};"></ha-icon>
+                <div>
+                  <div style="font-weight: 600;">Heat: ${cat}</div>
+                  <div style="opacity: 0.8; font-size: 0.9em;">Heat index ${hi}°C</div>
+                </div>
+              </div>
+            `;
+          ]]]
 
   # ─────────────────────────────────────────────────────────────────
-  # Frost warning — same pattern as the heat warning.
+  # Conditional: frost warning
   # ─────────────────────────────────────────────────────────────────
   - type: conditional
     conditions:
@@ -335,17 +358,86 @@ cards:
       - entity: sensor.weather_station_frost_point_category
         state_not: unavailable
     card:
-      type: custom:mushroom-template-card
-      primary: "Frost: {{ states('sensor.weather_station_frost_point_category') }}"
-      secondary: "Frost point {{ states('sensor.weather_station_frost_point_2') | float(0) | round(1) }}°C"
-      icon: mdi:snowflake-alert
-      icon_color: |-
-        {% set c = states('sensor.weather_station_frost_point_category') %}
-        {% if c == 'Light Frost' %}cyan
-        {% elif c == 'Hard Frost' %}blue
-        {% else %}indigo
-        {% endif %}
-      fill_container: true
+      type: custom:button-card
+      show_name: false
+      show_state: false
+      show_icon: false
       tap_action:
         action: more-info
         entity: sensor.weather_station_frost_point_2
+      styles:
+        card:
+          - padding: 12px 20px
+          - background: rgba(96, 179, 228, 0.08)
+          - box-shadow: none
+          - border-radius: 0
+          - height: auto
+          - border-top: 1px solid rgba(255, 255, 255, 0.08)
+        grid:
+          - grid-template-areas: '"content"'
+      custom_fields:
+        content: |
+          [[[
+            const cat = states['sensor.weather_station_frost_point_category'].state;
+            const fp = parseFloat(states['sensor.weather_station_frost_point_2'].state).toFixed(1);
+            let color = '#4dd0e1';
+            if (cat === 'Hard Frost') color = '#5c6bc0';
+            else if (cat === 'Severe Frost') color = '#3949ab';
+            return `
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <ha-icon icon="mdi:snowflake-alert" style="--mdc-icon-size: 28px; color: ${color};"></ha-icon>
+                <div>
+                  <div style="font-weight: 600;">Frost: ${cat}</div>
+                  <div style="opacity: 0.8; font-size: 0.9em;">Frost point ${fp}°C</div>
+                </div>
+              </div>
+            `;
+          ]]]
+
+  # ─────────────────────────────────────────────────────────────────
+  # Sunrise & sunset row — uses HA's built-in sun.sun entity
+  # ─────────────────────────────────────────────────────────────────
+  - type: custom:button-card
+    show_name: false
+    show_state: false
+    show_icon: false
+    tap_action:
+      action: more-info
+      entity: sun.sun
+    styles:
+      card:
+        - padding: 12px 20px 16px 20px
+        - background: transparent
+        - box-shadow: none
+        - border-radius: 0
+        - height: auto
+        - border-top: 1px solid rgba(255, 255, 255, 0.08)
+      grid:
+        - grid-template-areas: '"sun"'
+    custom_fields:
+      sun: |
+        [[[
+          const sun = states['sun.sun'];
+          if (!sun) return '<div style="opacity: 0.5;">No sun data</div>';
+
+          const formatTime = (iso) => iso
+            ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+            : '--:--';
+
+          // sun.sun.attributes contains next_rising and next_setting (ISO strings)
+          const nextRise = sun.attributes.next_rising;
+          const nextSet = sun.attributes.next_setting;
+
+          return `
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.95em; opacity: 0.9;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <ha-icon icon="mdi:weather-sunset-up" style="--mdc-icon-size: 22px; color: #ffb84d;"></ha-icon>
+                <span>Sunrise <strong style="font-weight: 600;">${formatTime(nextRise)}</strong></span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <ha-icon icon="mdi:weather-sunset-down" style="--mdc-icon-size: 22px; color: #ff6e3a;"></ha-icon>
+                <span>Sunset <strong style="font-weight: 600;">${formatTime(nextSet)}</strong></span>
+              </div>
+            </div>
+          `;
+        ]]]

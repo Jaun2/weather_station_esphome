@@ -130,46 +130,51 @@ Humidity moves on breath = real BME280. Humidity stays flat = BMP280; replace it
 
 ### 8. Install the dashboard summary card (optional)
 
-A pre-built Lovelace card sits in [`home_assistant/dashboards/weather_summary_card.yaml`](./home_assistant/dashboards/weather_summary_card.yaml). It bundles current conditions, rainfall, system health (battery / Wi-Fi / charging), and conditional warning cards into one tidy widget — built on **Mushroom Cards**, with smart conditionals so it only shows what's relevant (e.g., the "It's raining" panel only appears when it actually is, the heat warning only appears when the heat index is high enough to matter).
+A polished Lovelace widget sits in [`home_assistant/dashboards/weather_summary_card.yaml`](./home_assistant/dashboards/weather_summary_card.yaml). It bundles current conditions, system health (battery / Wi-Fi / charging), rainfall, sunrise/sunset, and conditional warning rows into one cohesive card — built using `button-card` with custom CSS-grid layouts, with smart conditional sections so it only shows what's relevant.
 
-**Requires:** [HACS](https://hacs.xyz/) + [Mushroom Cards](https://github.com/piitaya/lovelace-mushroom) installed in HA.
+**Requires:** [HACS](https://hacs.xyz/) plus two custom frontend cards:
+
+- [`button-card`](https://github.com/custom-cards/button-card) — drives the custom layouts.
+- [`stack-in-card`](https://github.com/custom-cards/stack-in-card) — merges sub-sections into one visual block (no internal borders).
 
 **Steps:**
 
-1. **Install Mushroom Cards** (if you don't already have them):
-   - HACS → **Frontend** → search **Mushroom** → **Download**.
+1. **Install both cards via HACS:**
+   - HACS → **Frontend** → search **button-card** → **Download**.
+   - HACS → **Frontend** → search **stack-in-card** → **Download**.
    - Restart Home Assistant when HACS prompts.
 
-2. **Open the card YAML in this repo:** [`home_assistant/dashboards/weather_summary_card.yaml`](./home_assistant/dashboards/weather_summary_card.yaml). Copy everything from the `type: vertical-stack` line down to the end (the comments at the top are documentation, not config).
+2. **Verify the entity IDs match your HA.** Some entities may have a `_2` suffix in your HA registry if the device was re-added at any point. Filter for `weather_station` in **Developer Tools → States** to confirm IDs. The card YAML uses the IDs that worked for the project's reference setup; if any differ in your HA, search-and-replace before pasting.
 
-3. **In Home Assistant:**
+3. **Open the card YAML in this repo:** [`home_assistant/dashboards/weather_summary_card.yaml`](./home_assistant/dashboards/weather_summary_card.yaml). Copy everything from the `type: custom:stack-in-card` line down to the end (the comments at the top are documentation, not config).
+
+4. **In Home Assistant:**
    - Open the dashboard you want the card on.
    - Click **⋮ menu (top right) → Edit Dashboard**.
    - Click **+ Add Card** at the bottom of the page.
    - Scroll the card picker to the bottom and pick **Manual**.
    - Paste the copied YAML in. **Save**.
 
-4. The card appears immediately. Tap any chip / section to get the entity's more-info popup.
+5. The widget appears as one unified card. Tap any section for the entity's more-info popup.
 
-**What you get:**
+**What you get (top to bottom):**
 
-- **Title bar** — "Weather Station" with a customisable subtitle.
-- **System status row** — three chips (charging / battery / Wi-Fi), all with icons and colors that adapt to the values (battery turns red when low, Wi-Fi bars scale with strength, charging chip lights up green when active).
-- **Big current temperature** with feels-like underneath. The thermometer icon shifts color through the temperature range (red hot → orange warm → amber mild → blue cool → indigo cold).
-- **Atmosphere chips** — Visibility (with weather-appropriate icon), Humidity %, Pressure hPa.
-- **Rainfall summary** — today's total + last 24 h. Icon goes blue when it's been rainy.
-- **Forecast hint chips** — Rain Likelihood %, Fog Probability %.
-- **Conditional cards (only render when relevant):**
-  - "It's raining right now" — only when `Is Raining` is on.
-  - Heat warning (Caution / Extreme Caution / Danger) — only when `Heat Index Category` is something other than "Not Applicable".
-  - Frost warning (Light / Hard / Severe) — only when `Frost Point Category` applies.
+- **Header bar** — "Weather Station" title plus three system-status icons on the right (charging, battery %, Wi-Fi %). Icons recolor and rescale with the underlying values.
+- **Main weather block** — large temperature with the dominant weather icon (sun / fog / hazy / pouring depending on visibility and rain status). Feels-like temperature and visibility underneath. Stats column on the right: humidity, pressure, rain probability, fog risk.
+- **Rainfall summary** — Today's mm + last 24 h. Dimmed when zero.
+- **Conditional warning rows (only render when applicable):**
+  - "It's raining right now" with intensity, only while raining.
+  - Heat warning, only when heat index is meaningful (T ≥ 27 °C and RH ≥ 40 %).
+  - Frost warning, only when frost point applies (T < 0 °C).
+- **Sunrise / Sunset row** — pulled from HA's built-in `sun.sun` entity. Always shown, 24-hour format.
 
 **Tweaks** (in the YAML):
 
-- Change the subtitle (default "Vereeniging") on the title card.
-- Adjust the temperature color thresholds (default >=30 red, >=20 orange, etc.) to your climate.
-- Re-order or delete sections — `vertical-stack` renders cards top-to-bottom in the order they're listed.
-- Add it to multiple dashboards by pasting the same YAML in each.
+- Change the subtitle (default "Vereeniging") in the header section.
+- Adjust the temperature color thresholds inside the JS templates (search `tempColor`).
+- Reorder sections by moving their card blocks within `cards:`.
+- Edit the JS templates inside `[[[ ... ]]]` blocks to change content / formatting / colors.
+- The whole widget adapts gracefully to narrow dashboard columns.
 
 ## Sensors
 
