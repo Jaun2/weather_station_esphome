@@ -128,70 +128,78 @@ Humidity moves on breath = real BME280. Humidity stays flat = BMP280; replace it
 
 ## Sensors
 
-The `weather-station` device card shows ~19 entities after firmware install + HA package, organised as follows.
+The `weather-station` device card shows ~19 entities after firmware install + HA package, plus 5 HA-side plumbing entities. Each table below has a **What it means** column explaining the metric in plain terms; implementation details are kept brief.
 
 ### Raw measurements
 
-| Entity | Unit | Notes |
+Direct readings from the BME280 and reed switch — the ground truth that everything else is derived from.
+
+| Entity | Unit | What it means |
 |---|---|---|
-| `Temperature` | °C | BME280 |
-| `Humidity` | % RH | BME280 |
-| `Pressure` | hPa | BME280 — raw (~840 hPa at 1500 m) |
-| `Rain Bucket` | on/off | Reed switch state (mostly diagnostic) |
-| `Rain Tips` | count | Cumulative tip count since install |
-| `Is Raining` | on/off | True if a tip occurred in the last 5 min (`raining_window_minutes` substitution) |
+| `Temperature` | °C | Air temperature, straight from the BME280. |
+| `Humidity` | % RH | Relative humidity — how saturated the air is with water vapour at the current temperature. 100 % means the air physically cannot hold any more. |
+| `Pressure` | hPa | Atmospheric pressure (uncorrected for altitude). Reads ~840 hPa here at 1500 m vs ~1013 at sea level — the absolute value is location-bound, but day-to-day **changes** matter: falling pressure usually precedes rain. |
+| `Rain Bucket` | on/off | Instantaneous reed-switch state. Flips `on` briefly each time the tipping bucket tips. Mostly diagnostic — `Rain Tips` is the useful metric. |
+| `Rain Tips` | count | Cumulative bucket tips since the last reset. Multiplied by `mm_per_tip` (default 0.6314) to give rainfall. |
+| `Is Raining` | on/off | `On` if at least one tip occurred in the last 5 min, else `Off`. Quick "is it actively raining right now?" flag for automations. Window length is the `raining_window_minutes` substitution. |
 
 ### Derived metrics — numeric (firmware lambdas)
 
-| Entity | Type | Notes |
+Formulas evaluated on-device and published alongside the raw readings, so derived metrics live on the device card without round-tripping through HA.
+
+| Entity | Unit | What it means |
 |---|---|---|
-| `Dew Point` | °C | Magnus-Tetens (water saturation) |
-| `Heat Index` | °C | NWS Rothfusz regression; `Unknown` when T < 27 °C OR RH < 40 % |
-| `Frost Point` | °C | Magnus-Tetens (ice saturation); `Unknown` above 0 °C |
-| `Fog Probability` | % | Heuristic from RH and dew-point spread |
-| `Rain Likelihood` | % | Combines pressure trend, humidity trend, dew-point spread |
-| `Rainfall` | mm | Cumulative since install (`tips × mm_per_tip`) |
-| `Rainfall Session` | mm | Current/most-recent rain event; resets when no tips for 60 min |
-| `Rainfall 24h` | mm | Rolling 24-hour total (window from now); subscribes to `Rainfall 24h Source` in HA |
-| `Feels Like` | °C | Australian Apparent Temperature (Steadman / BOM), no-wind variant |
+| `Dew Point` | °C | The temperature the air would need to cool to before water vapour starts condensing into dew. The closer Dew Point is to current Temperature, the more humid and "sticky" the air feels. Magnus-Tetens formula over water saturation. |
+| `Heat Index` | °C | The "feels hotter" temperature when humidity adds to heat stress (NWS Rothfusz regression). Only computed when T ≥ 27 °C **and** RH ≥ 40 % — outside that range the formula is meaningless and the entity reads `Unknown`. |
+| `Frost Point` | °C | The temperature surfaces (grass, car windscreens) need to fall to before frost forms. Saturation is computed over ice, not water — different from Dew Point in cold conditions. Only meaningful below 0 °C; reads `Unknown` above. Important for gardeners and pilots in winter. |
+| `Fog Probability` | % | Heuristic 0–100 score based on relative humidity and the temperature/dew-point spread. High RH + small spread → fog risk now. Not a forecast — an instantaneous read on whether current conditions favour fog. |
+| `Rain Likelihood` | % | Heuristic 0–100 score combining three signals: pressure trend (falling fast → stormy), humidity trend (rising → wet air arriving), and current temperature/dew-point spread (small spread → saturated air). Pressure and humidity trends come from HA's recorder history. Settles to low values in stable conditions. |
+| `Rainfall` | mm | Cumulative rainfall since the last `Rain Tips Reset` press. Long-running total — useful for monthly or seasonal rainfall. |
+| `Rainfall Session` | mm | Rainfall in the current/most-recent rain event. Resets to zero when 60 minutes pass with no tips, defining the end of one rain event. |
+| `Rainfall 24h` | mm | Rolling 24-hour rainfall total — always reflects the last 24 hours from now. Old rain ages out as time passes. Computed by HA's `statistics` integration and round-tripped onto the device card. |
+| `Feels Like` | °C | Australian Apparent Temperature (BOM / Steadman). Combines temperature and humidity into a single "what it feels like" number. Unlike Heat Index, it's defined across the full temperature range — works in both warm and cool conditions. Stage 9 will incorporate wind once the anemometer is wired. |
 
 ### Derived metrics — categorical (firmware text lambdas)
 
-| Entity | Possible values |
-|---|---|
-| `Visibility` | Fog / Mist / Haze / Clear |
-| `Heat Index Category` | Caution / Extreme Caution / Danger / Extreme Danger / Not Applicable |
-| `Frost Point Category` | Light Frost / Hard Frost / Severe Frost / Not Applicable |
-| `Rain Intensity` | No Rain / Drizzle / Moderate / Heavy / Storm |
+Plain-English labels for the numbers above — easier to glance at and easier to use as automation triggers.
+
+| Entity | Possible values | What it means |
+|---|---|---|
+| `Visibility` | `Fog` / `Mist` / `Haze` / `Clear` | Coarser at-a-glance version of `Fog Probability`. Derived from RH and dew-point spread thresholds. |
+| `Heat Index Category` | `Caution` / `Extreme Caution` / `Danger` / `Extreme Danger` / `Not Applicable` | NWS-standard alert bands for Heat Index (≥27 / ≥32 / ≥39 / ≥52 °C). `Not Applicable` when conditions are too cool or dry for the formula to be meaningful. |
+| `Frost Point Category` | `Light Frost` / `Hard Frost` / `Severe Frost` / `Not Applicable` | Horticulture/agriculture bands for Frost Point: Light (0 to −2 °C), Hard (−2 to −5 °C), Severe (below −5 °C). `Not Applicable` above 0 °C. Drives garden-protection automations. |
+| `Rain Intensity` | `No Rain` / `Drizzle` / `Moderate` / `Heavy` / `Storm` | Standard meteorological intensity bands derived from `Rainfall Rate`: Drizzle <2.5 mm/h, Moderate <7.6 mm/h, Heavy <50 mm/h, Storm ≥50 mm/h. |
 
 ### Diagnostics
 
-| Entity | Notes |
-|---|---|
-| `Wi-Fi Signal` | dBm — raw signal strength |
-| `Wi-Fi Signal Strength` | % — human-friendly mapping (-50 dBm ≈ 100 %, -100 dBm = 0 %) |
-| `Uptime` | seconds since last wake (resets every cycle) |
-| `Battery Voltage` | V — raw LiPo voltage via the FireBeetle's onboard 2:1 divider on `GPIO0` |
-| `Battery` | % — piecewise LiPo curve mapping voltage to charge level (4.2 V → 100 %, 3.7 V → 50 %, 3.4 V → 10 %, 3.0 V → 0 %) |
+Health and self-test entities — surface in the device card under "Diagnostic" so they don't clutter the main view.
+
+| Entity | Unit | What it means |
+|---|---|---|
+| `Wi-Fi Signal` | dBm | Raw RSSI. Closer to 0 = stronger. -50 is excellent, -70 is workable, -100 is unusable. Useful when picking a mounting location. |
+| `Wi-Fi Signal Strength` | % | Same data on a friendlier 0–100 % scale (-50 dBm ≈ 100 %, -100 dBm = 0 %). |
+| `Uptime` | s | Seconds since the last wake from deep sleep. Resets to ~0 every 5 minutes — that's expected, not a fault. |
+| `Battery Voltage` | V | Raw LiPo voltage measured on `GPIO0` through the FireBeetle's onboard 2:1 divider. 4.2 V = full, 3.0 V = empty. The 3.3 V software cutoff fires below this. |
+| `Battery` | % | State-of-charge derived from `Battery Voltage` via a piecewise LiPo discharge curve (4.2 V → 100 %, 3.7 V → 50 %, 3.4 V → 10 %, 3.0 V → 0 %). More accurate near low charge than a single linear interpolation would be. |
 
 ### Controls
 
-| Entity | Notes |
+| Entity | What it does |
 |---|---|
-| `Restart` | Reboot the device |
-| `Rain Tips Reset` | Zero out cumulative tips, session tips, last-tip timestamp (for calibration) |
+| `Restart` | Soft-reboots the device (button entity in HA). |
+| `Rain Tips Reset` | Zeros `Rain Tips`, `Rainfall Session`, and the last-tip timestamp. Use after physical bucket recalibration so the cumulative totals don't include test pours. |
 
 ### HA-side plumbing (hidden by default)
 
-These compute trend gradients from HA's recorder history and feed them back to the firmware. Hide them in HA's UI if they appear and bother you.
+These four `derivative` / `statistics` sensors and one `utility_meter` live in Home Assistant because they need historical data — the device sleeps too much to compute rolling windows itself. Several are subscribed back into the firmware via the native API and feed the device-side derived metrics. Hide the internal ones via **Settings → Devices & Services → Entities** if they bother you.
 
-| Entity | Notes |
-|---|---|
-| `Pressure Change Rate 3h` | hPa/sec, derivative over 3-hour window — feeds Rain Likelihood |
-| `Humidity Change Rate 2h` | %/sec, derivative over 2-hour window — feeds Rain Likelihood |
-| `Rainfall Rate` | mm/hour, derivative over 15-min window — feeds Rain Intensity |
-| `Rainfall 24h Source` | mm, statistics integration over 24-hour window — feeds the device's `Rainfall 24h` entity |
-| `Rainfall Today` | mm, utility meter resetting at midnight — useful on dashboards |
+| Entity | Unit | What it means |
+|---|---|---|
+| `Pressure Change Rate 3h` | hPa/s | 3-hour pressure trend (linear-regression derivative). Negative = falling. Internal — feeds `Rain Likelihood` on the device. |
+| `Humidity Change Rate 2h` | %/s | 2-hour humidity trend. Positive = rising. Internal — also feeds `Rain Likelihood`. |
+| `Rainfall Rate` | mm/h | 15-minute rainfall derivative. Internal — feeds `Rain Intensity` categorisation. |
+| `Rainfall 24h Source` | mm | Rolling 24-hour rainfall sum (statistics integration with `state_characteristic: change`). Internal — feeds the device-card `Rainfall 24h` entity. |
+| `Rainfall Today` | mm | Daily rainfall total resetting at midnight. **User-facing** — useful for dashboard cards. Stays in HA, doesn't round-trip. |
 
 ## Build stages
 
