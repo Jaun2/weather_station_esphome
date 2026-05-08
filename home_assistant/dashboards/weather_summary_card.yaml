@@ -2,37 +2,35 @@
 #
 # Drop-in dashboard card built on Mushroom Cards (HACS).
 #
-# Layout:
-#   • Title bar
-#   • System status row: charging, battery, wifi (chips)
-#   • Big current temperature with feels-like
-#   • Atmosphere chips: visibility, humidity, pressure
-#   • Conditional "It's raining" card (only shown when actively raining)
-#   • Rainfall summary (today + last 24h)
-#   • Forecast hint chips: rain likelihood, fog probability
-#   • Conditional heat warning card (only when heat index applies)
-#   • Conditional frost warning card (only when frost point applies)
+# Design rule: nothing renders when the underlying value is unknown,
+# unavailable, or "Not Applicable". The card stays clean even if the
+# device is temporarily offline or the BME280 hasn't read yet.
+#
+# Layout (sections appear top to bottom, but each is self-hiding):
+#   • Title bar (always shown)
+#   • System status row: charging, battery, Wi-Fi (chips, hide if unknown)
+#   • Big current temperature with feels-like (feels-like line hides if NaN)
+#   • Atmosphere chips: visibility, humidity, pressure (each hides individually)
+#   • "It's raining" card (only when actively raining)
+#   • Rainfall summary card (only when device is online)
+#   • Forecast hint chips: rain likelihood, fog probability (each hides individually)
+#   • Heat warning card (only when heat index applies)
+#   • Frost warning card (only when frost point applies)
 #
 # How to use:
 #   1. In Home Assistant, edit your dashboard.
 #   2. Add Card → Manual.
 #   3. Paste the entire YAML below (everything from `type: vertical-stack`
 #      to the end of the file).
-#   4. Save. The card will appear in your dashboard with all conditional
-#      sections respecting their entity states.
+#   4. Save.
 #
 # Requires:
-#   - Home Assistant Companion ESPHome integration set up with the
-#     weather-station device (entity IDs match the firmware naming).
-#   - HACS + Mushroom Cards integration installed.
+#   - The Weather Station ESPHome integration (entity IDs match the
+#     firmware naming).
+#   - HACS + Mushroom Cards installed.
 #
-# Notes:
-#   - The two warning cards (heat / frost) are *invisible* when their
-#     respective category is "Not Applicable" (which is most of the time).
-#     They auto-appear during heatwaves or sub-zero mornings.
-#   - The "It's raining" card only shows while the Is Raining binary is
-#     ON (default 5-minute window after the last tip).
-#   - All chips and template cards are tappable for more-info popups.
+# If a chip or section doesn't appear, the underlying entity is
+# probably 'unknown' or 'unavailable' — that's by design.
 
 type: vertical-stack
 cards:
@@ -44,139 +42,212 @@ cards:
     subtitle: Vereeniging
 
   # ─────────────────────────────────────────────────────────────────
-  # System status row — charging, battery, wifi
+  # System status row — charging, battery, Wi-Fi
+  # Each chip hides itself if its entity is unknown/unavailable.
   # ─────────────────────────────────────────────────────────────────
   - type: custom:mushroom-chips-card
     alignment: end
     chips:
-      # Charging indicator (icon + text changes based on state)
-      - type: template
-        icon: mdi:solar-power-variant
-        icon_color: |-
-          {% if is_state('binary_sensor.weather_station_charging', 'on') %}
-          green
-          {% else %}
-          disabled
-          {% endif %}
-        content: |-
-          {% if is_state('binary_sensor.weather_station_charging', 'on') %}
-          Charging
-          {% else %}
-          Idle
-          {% endif %}
-        tap_action:
-          action: more-info
-          entity: binary_sensor.weather_station_charging
+      # Charging chip — only shown when state is known
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.weather_station_charging
+            state_not: unknown
+          - condition: state
+            entity: binary_sensor.weather_station_charging
+            state_not: unavailable
+        chip:
+          type: template
+          icon: mdi:solar-power-variant
+          icon_color: |-
+            {% if is_state('binary_sensor.weather_station_charging', 'on') %}
+            green
+            {% else %}
+            disabled
+            {% endif %}
+          content: |-
+            {% if is_state('binary_sensor.weather_station_charging', 'on') %}
+            Charging
+            {% else %}
+            Idle
+            {% endif %}
+          tap_action:
+            action: more-info
+            entity: binary_sensor.weather_station_charging
 
-      # Battery (icon scales with charge level, color reflects health)
-      - type: template
-        icon: |-
-          {% set p = states('sensor.weather_station_battery') | float(0) %}
-          {% if p > 90 %}mdi:battery
-          {% elif p > 70 %}mdi:battery-80
-          {% elif p > 50 %}mdi:battery-60
-          {% elif p > 30 %}mdi:battery-40
-          {% elif p > 10 %}mdi:battery-20
-          {% else %}mdi:battery-alert
-          {% endif %}
-        icon_color: |-
-          {% set p = states('sensor.weather_station_battery') | float(0) %}
-          {% if p > 50 %}green
-          {% elif p > 20 %}orange
-          {% else %}red
-          {% endif %}
-        content: "{{ states('sensor.weather_station_battery') }}%"
-        tap_action:
-          action: more-info
-          entity: sensor.weather_station_battery
+      # Battery chip — icon scales with charge, color reflects health
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: sensor.weather_station_battery
+            state_not: unknown
+          - condition: state
+            entity: sensor.weather_station_battery
+            state_not: unavailable
+        chip:
+          type: template
+          icon: |-
+            {% set p = states('sensor.weather_station_battery') | float(0) %}
+            {% if p > 90 %}mdi:battery
+            {% elif p > 70 %}mdi:battery-80
+            {% elif p > 50 %}mdi:battery-60
+            {% elif p > 30 %}mdi:battery-40
+            {% elif p > 10 %}mdi:battery-20
+            {% else %}mdi:battery-alert
+            {% endif %}
+          icon_color: |-
+            {% set p = states('sensor.weather_station_battery') | float(0) %}
+            {% if p > 50 %}green
+            {% elif p > 20 %}orange
+            {% else %}red
+            {% endif %}
+          content: "{{ states('sensor.weather_station_battery') | int(0) }}%"
+          tap_action:
+            action: more-info
+            entity: sensor.weather_station_battery
 
-      # Wi-Fi strength (bars icon + percentage)
-      - type: template
-        icon: |-
-          {% set s = states('sensor.weather_station_wifi_signal_strength') | float(0) %}
-          {% if s > 70 %}mdi:wifi-strength-4
-          {% elif s > 50 %}mdi:wifi-strength-3
-          {% elif s > 30 %}mdi:wifi-strength-2
-          {% elif s > 0 %}mdi:wifi-strength-1
-          {% else %}mdi:wifi-strength-outline
-          {% endif %}
-        icon_color: |-
-          {% set s = states('sensor.weather_station_wifi_signal_strength') | float(0) %}
-          {% if s > 50 %}green
-          {% elif s > 25 %}orange
-          {% else %}red
-          {% endif %}
-        content: "{{ states('sensor.weather_station_wifi_signal_strength') | int(0) }}%"
-        tap_action:
-          action: more-info
-          entity: sensor.weather_station_wifi_signal_strength
+      # Wi-Fi chip — entity name is wi_fi_signal_strength (ESPHome converts
+      # "Wi-Fi" -> "wi_fi" with the dash becoming an underscore).
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: sensor.weather_station_wi_fi_signal_strength
+            state_not: unknown
+          - condition: state
+            entity: sensor.weather_station_wi_fi_signal_strength
+            state_not: unavailable
+        chip:
+          type: template
+          icon: |-
+            {% set s = states('sensor.weather_station_wi_fi_signal_strength') | float(0) %}
+            {% if s > 70 %}mdi:wifi-strength-4
+            {% elif s > 50 %}mdi:wifi-strength-3
+            {% elif s > 30 %}mdi:wifi-strength-2
+            {% elif s > 0 %}mdi:wifi-strength-1
+            {% else %}mdi:wifi-strength-outline
+            {% endif %}
+          icon_color: |-
+            {% set s = states('sensor.weather_station_wi_fi_signal_strength') | float(0) %}
+            {% if s > 50 %}green
+            {% elif s > 25 %}orange
+            {% else %}red
+            {% endif %}
+          content: "{{ states('sensor.weather_station_wi_fi_signal_strength') | int(0) }}%"
+          tap_action:
+            action: more-info
+            entity: sensor.weather_station_wi_fi_signal_strength
 
   # ─────────────────────────────────────────────────────────────────
-  # Big current temperature with feels-like underneath
+  # Big current temperature.
+  # The "Feels like" secondary line only appears when the value is
+  # known — otherwise the secondary collapses to empty and the card
+  # shows only the primary temperature.
   # ─────────────────────────────────────────────────────────────────
-  - type: custom:mushroom-template-card
-    primary: "{{ states('sensor.weather_station_temperature') | round(1) }}°C"
-    secondary: |-
-      Feels like {{ states('sensor.weather_station_feels_like') | round(1) }}°C
-    icon: mdi:thermometer
-    icon_color: |-
-      {% set t = states('sensor.weather_station_temperature') | float(0) %}
-      {% if t >= 30 %}red
-      {% elif t >= 20 %}orange
-      {% elif t >= 10 %}amber
-      {% elif t >= 0 %}blue
-      {% else %}indigo
-      {% endif %}
-    fill_container: true
-    tap_action:
-      action: more-info
-      entity: sensor.weather_station_temperature
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: sensor.weather_station_temperature
+        state_not: unknown
+      - condition: state
+        entity: sensor.weather_station_temperature
+        state_not: unavailable
+    card:
+      type: custom:mushroom-template-card
+      primary: "{{ states('sensor.weather_station_temperature') | float | round(1) }}°C"
+      secondary: |-
+        {% set fl = states('sensor.weather_station_feels_like') %}
+        {% if fl not in ['unknown', 'unavailable', 'nan'] %}Feels like {{ fl | float | round(1) }}°C{% endif %}
+      icon: mdi:thermometer
+      icon_color: |-
+        {% set t = states('sensor.weather_station_temperature') | float(0) %}
+        {% if t >= 30 %}red
+        {% elif t >= 20 %}orange
+        {% elif t >= 10 %}amber
+        {% elif t >= 0 %}blue
+        {% else %}indigo
+        {% endif %}
+      fill_container: true
+      tap_action:
+        action: more-info
+        entity: sensor.weather_station_temperature
 
   # ─────────────────────────────────────────────────────────────────
-  # Atmosphere chips: visibility, humidity, pressure
+  # Atmosphere chips — Visibility, Humidity, Pressure.
+  # Each is wrapped in a conditional so it disappears when its source
+  # entity is unknown / unavailable / "unknown" string from the firmware.
   # ─────────────────────────────────────────────────────────────────
   - type: custom:mushroom-chips-card
     chips:
-      - type: template
-        entity: sensor.weather_station_visibility
-        icon: |-
-          {% set v = states('sensor.weather_station_visibility') %}
-          {% if v == 'Fog' %}mdi:weather-fog
-          {% elif v == 'Mist' %}mdi:weather-fog
-          {% elif v == 'Haze' %}mdi:weather-hazy
-          {% else %}mdi:weather-sunny
-          {% endif %}
-        icon_color: |-
-          {% set v = states('sensor.weather_station_visibility') %}
-          {% if v in ['Fog', 'Mist'] %}grey
-          {% elif v == 'Haze' %}orange
-          {% else %}amber
-          {% endif %}
-        content: "{{ states('sensor.weather_station_visibility') }}"
-        tap_action:
-          action: more-info
+      # Visibility — also hide when value is the literal string "unknown"
+      # (which the firmware emits when T/H/dewpoint can't be computed)
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: sensor.weather_station_visibility
+            state_not: unknown
+          - condition: state
+            entity: sensor.weather_station_visibility
+            state_not: unavailable
+        chip:
+          type: template
           entity: sensor.weather_station_visibility
+          icon: |-
+            {% set v = states('sensor.weather_station_visibility') %}
+            {% if v == 'Fog' %}mdi:weather-fog
+            {% elif v == 'Mist' %}mdi:weather-fog
+            {% elif v == 'Haze' %}mdi:weather-hazy
+            {% else %}mdi:weather-sunny
+            {% endif %}
+          icon_color: |-
+            {% set v = states('sensor.weather_station_visibility') %}
+            {% if v in ['Fog', 'Mist'] %}grey
+            {% elif v == 'Haze' %}orange
+            {% else %}amber
+            {% endif %}
+          content: "{{ states('sensor.weather_station_visibility') }}"
+          tap_action:
+            action: more-info
+            entity: sensor.weather_station_visibility
 
-      - type: template
-        entity: sensor.weather_station_humidity
-        icon: mdi:water-percent
-        icon_color: blue
-        content: "{{ states('sensor.weather_station_humidity') | round(0) }}%"
-        tap_action:
-          action: more-info
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: sensor.weather_station_humidity
+            state_not: unknown
+          - condition: state
+            entity: sensor.weather_station_humidity
+            state_not: unavailable
+        chip:
+          type: template
           entity: sensor.weather_station_humidity
+          icon: mdi:water-percent
+          icon_color: blue
+          content: "{{ states('sensor.weather_station_humidity') | float | round(0) }}%"
+          tap_action:
+            action: more-info
+            entity: sensor.weather_station_humidity
 
-      - type: template
-        entity: sensor.weather_station_pressure
-        icon: mdi:gauge
-        icon_color: indigo
-        content: "{{ states('sensor.weather_station_pressure') | round(0) }} hPa"
-        tap_action:
-          action: more-info
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: sensor.weather_station_pressure
+            state_not: unknown
+          - condition: state
+            entity: sensor.weather_station_pressure
+            state_not: unavailable
+        chip:
+          type: template
           entity: sensor.weather_station_pressure
+          icon: mdi:gauge
+          icon_color: indigo
+          content: "{{ states('sensor.weather_station_pressure') | float | round(0) }} hPa"
+          tap_action:
+            action: more-info
+            entity: sensor.weather_station_pressure
 
   # ─────────────────────────────────────────────────────────────────
-  # Conditional: actively raining right now
+  # "It's raining right now" — only renders when actively raining
   # ─────────────────────────────────────────────────────────────────
   - type: conditional
     conditions:
@@ -195,71 +266,104 @@ cards:
         entity: sensor.weather_station_rain_intensity
 
   # ─────────────────────────────────────────────────────────────────
-  # Rainfall summary — today + last 24 hours
-  # ─────────────────────────────────────────────────────────────────
-  - type: custom:mushroom-template-card
-    primary: Rainfall
-    secondary: |-
-      Today: {{ states('sensor.weather_station_rainfall_today') | round(2) }} mm  ·  24h: {{ states('sensor.weather_station_rainfall_24h') | round(2) }} mm
-    icon: mdi:water
-    icon_color: |-
-      {% set today = states('sensor.weather_station_rainfall_today') | float(0) %}
-      {% if today > 5 %}blue
-      {% elif today > 0 %}cyan
-      {% else %}disabled
-      {% endif %}
-    tap_action:
-      action: more-info
-      entity: sensor.weather_station_rainfall_today
-
-  # ─────────────────────────────────────────────────────────────────
-  # Forecast hint chips: rain likelihood + fog probability
-  # ─────────────────────────────────────────────────────────────────
-  - type: custom:mushroom-chips-card
-    chips:
-      - type: template
-        entity: sensor.weather_station_rain_likelihood
-        icon: mdi:cloud-percent-outline
-        icon_color: |-
-          {% set p = states('sensor.weather_station_rain_likelihood') | float(0) %}
-          {% if p >= 70 %}blue
-          {% elif p >= 40 %}cyan
-          {% else %}grey
-          {% endif %}
-        content: "Rain {{ states('sensor.weather_station_rain_likelihood') | int(0) }}%"
-        tap_action:
-          action: more-info
-          entity: sensor.weather_station_rain_likelihood
-
-      - type: template
-        entity: sensor.weather_station_fog_probability
-        icon: mdi:weather-fog
-        icon_color: |-
-          {% set p = states('sensor.weather_station_fog_probability') | float(0) %}
-          {% if p >= 70 %}grey
-          {% elif p >= 40 %}blue-grey
-          {% else %}disabled
-          {% endif %}
-        content: "Fog {{ states('sensor.weather_station_fog_probability') | int(0) }}%"
-        tap_action:
-          action: more-info
-          entity: sensor.weather_station_fog_probability
-
-  # ─────────────────────────────────────────────────────────────────
-  # Conditional: heat warning
-  # Only shows when Heat Index Category != "Not Applicable"
+  # Rainfall summary — today + last 24 h
   # ─────────────────────────────────────────────────────────────────
   - type: conditional
     conditions:
-      - condition: template
-        value_template: >
-          {{ states('sensor.weather_station_heat_index_category') not in
-             ['Not Applicable', 'unknown', 'unavailable'] }}
+      - condition: state
+        entity: sensor.weather_station_rainfall_today
+        state_not: unknown
+      - condition: state
+        entity: sensor.weather_station_rainfall_today
+        state_not: unavailable
+    card:
+      type: custom:mushroom-template-card
+      primary: Rainfall
+      secondary: |-
+        Today: {{ states('sensor.weather_station_rainfall_today') | float | round(2) }} mm  ·  24h: {{ states('sensor.weather_station_rainfall_24h') | float | round(2) }} mm
+      icon: mdi:water
+      icon_color: |-
+        {% set today = states('sensor.weather_station_rainfall_today') | float(0) %}
+        {% if today > 5 %}blue
+        {% elif today > 0 %}cyan
+        {% else %}disabled
+        {% endif %}
+      tap_action:
+        action: more-info
+        entity: sensor.weather_station_rainfall_today
+
+  # ─────────────────────────────────────────────────────────────────
+  # Forecast hints chips — Rain Likelihood + Fog Probability
+  # Each hides when its source is unknown.
+  # ─────────────────────────────────────────────────────────────────
+  - type: custom:mushroom-chips-card
+    chips:
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: sensor.weather_station_rain_likelihood
+            state_not: unknown
+          - condition: state
+            entity: sensor.weather_station_rain_likelihood
+            state_not: unavailable
+        chip:
+          type: template
+          entity: sensor.weather_station_rain_likelihood
+          icon: mdi:cloud-percent-outline
+          icon_color: |-
+            {% set p = states('sensor.weather_station_rain_likelihood') | float(0) %}
+            {% if p >= 70 %}blue
+            {% elif p >= 40 %}cyan
+            {% else %}grey
+            {% endif %}
+          content: "Rain {{ states('sensor.weather_station_rain_likelihood') | float | round(0) | int }}%"
+          tap_action:
+            action: more-info
+            entity: sensor.weather_station_rain_likelihood
+
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: sensor.weather_station_fog_probability
+            state_not: unknown
+          - condition: state
+            entity: sensor.weather_station_fog_probability
+            state_not: unavailable
+        chip:
+          type: template
+          entity: sensor.weather_station_fog_probability
+          icon: mdi:weather-fog
+          icon_color: |-
+            {% set p = states('sensor.weather_station_fog_probability') | float(0) %}
+            {% if p >= 70 %}grey
+            {% elif p >= 40 %}blue-grey
+            {% else %}disabled
+            {% endif %}
+          content: "Fog {{ states('sensor.weather_station_fog_probability') | float | round(0) | int }}%"
+          tap_action:
+            action: more-info
+            entity: sensor.weather_station_fog_probability
+
+  # ─────────────────────────────────────────────────────────────────
+  # Heat warning — only renders when Heat Index Category is one of
+  # the actual warning levels (not "Not Applicable" / unknown).
+  # ─────────────────────────────────────────────────────────────────
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: sensor.weather_station_heat_index_category
+        state_not: Not Applicable
+      - condition: state
+        entity: sensor.weather_station_heat_index_category
+        state_not: unknown
+      - condition: state
+        entity: sensor.weather_station_heat_index_category
+        state_not: unavailable
     card:
       type: custom:mushroom-template-card
       primary: "Heat: {{ states('sensor.weather_station_heat_index_category') }}"
       secondary: |-
-        Heat index {{ states('sensor.weather_station_heat_index') | round(1) }}°C
+        Heat index {{ states('sensor.weather_station_heat_index') | float | round(1) }}°C
       icon: mdi:weather-sunny-alert
       icon_color: |-
         {% set c = states('sensor.weather_station_heat_index_category') %}
@@ -274,20 +378,24 @@ cards:
         entity: sensor.weather_station_heat_index
 
   # ─────────────────────────────────────────────────────────────────
-  # Conditional: frost warning
-  # Only shows when Frost Point Category != "Not Applicable"
+  # Frost warning — same pattern as the heat warning.
   # ─────────────────────────────────────────────────────────────────
   - type: conditional
     conditions:
-      - condition: template
-        value_template: >
-          {{ states('sensor.weather_station_frost_point_category') not in
-             ['Not Applicable', 'unknown', 'unavailable'] }}
+      - condition: state
+        entity: sensor.weather_station_frost_point_category
+        state_not: Not Applicable
+      - condition: state
+        entity: sensor.weather_station_frost_point_category
+        state_not: unknown
+      - condition: state
+        entity: sensor.weather_station_frost_point_category
+        state_not: unavailable
     card:
       type: custom:mushroom-template-card
       primary: "Frost: {{ states('sensor.weather_station_frost_point_category') }}"
       secondary: |-
-        Frost point {{ states('sensor.weather_station_frost_point') | round(1) }}°C
+        Frost point {{ states('sensor.weather_station_frost_point') | float | round(1) }}°C
       icon: mdi:snowflake-alert
       icon_color: |-
         {% set c = states('sensor.weather_station_frost_point_category') %}
