@@ -3,6 +3,7 @@ substitutions:
   friendly_name: "Weather Station"
   mm_per_tip: '0.6314'              # SS4H-RG reference; recalibrate at Stage 7
   session_gap_minutes: '60'         # idle minutes before a rain session ends
+  raining_window_minutes: '5'       # tips within this many minutes => "Is Raining" = true
   min_battery_voltage: '3.0'        # LiPo cutoff (0 %)
   max_battery_voltage: '4.2'        # LiPo full (100 %)
   low_voltage_cutoff: '3.3'         # below this, force long sleep
@@ -167,6 +168,20 @@ binary_sensor:
             }
             id(rain_session_tips) += 1;
             id(rain_tips_total) += 1;
+
+  # True when at least one tip has occurred in the last
+  # ${raining_window_minutes} minutes. Re-evaluated every device
+  # update tick during the 25 s awake window; with the 5-min sleep
+  # cycle the published value can be at most one cycle stale.
+  - platform: template
+    name: "Is Raining"
+    icon: mdi:weather-pouring
+    lambda: |-
+      auto t = id(ha_time).now();
+      if (!t.is_valid()) return {};                              // unknown until time syncs
+      if (id(rain_last_tip_epoch) == 0) return false;
+      return (t.timestamp - id(rain_last_tip_epoch))
+             < ${raining_window_minutes} * 60;
 
   - platform: homeassistant
     id: deep_sleep_enable
