@@ -267,7 +267,7 @@ cards:
           {% elif p >= 40 %}cyan
           {% else %}grey
           {% endif %}
-        content: "Chance of rain {{ states('sensor.weather_station_rain_likelihood_2') | float(0) | round(0) | int }}%"
+        content: "Rain probability {{ states('sensor.weather_station_rain_likelihood_2') | float(0) | round(0) | int }}%"
         tap_action:
           action: more-info
           entity: sensor.weather_station_rain_likelihood_2
@@ -288,7 +288,7 @@ cards:
             {% elif p >= 40 %}blue-grey
             {% else %}disabled
             {% endif %}
-          content: "Chance of fog {{ states('sensor.weather_station_fog_probability_2') | float(0) | round(0) | int }}%"
+          content: "Fog risk {{ states('sensor.weather_station_fog_probability_2') | float(0) | round(0) | int }}%"
           tap_action:
             action: more-info
             entity: sensor.weather_station_fog_probability_2
