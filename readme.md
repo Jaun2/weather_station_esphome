@@ -21,6 +21,8 @@ secrets.yaml                       # local secrets (gitignored)
 home_assistant/
   packages/
     weather_station.yaml           # HA package — drop into /config/packages/
+  dashboards/
+    weather_summary_card.yaml      # Lovelace card for HA dashboard (Mushroom Cards)
 docs/
   workflow.md                      # detailed flashing / OTA workflow + verification gates
 CLAUDE.md                          # project context, hardware specs, full roadmap
