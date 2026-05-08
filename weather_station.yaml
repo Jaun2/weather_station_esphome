@@ -72,6 +72,14 @@ ota:
   - platform: esphome
     password: !secret ota_password
 
+# Mark a successfully-booted OTA as 'good' after 10 s instead of the
+# default 60 s. Required because our deep_sleep run_duration is 25 s —
+# without this, every wake would sleep before the OTA was validated,
+# the bootloader would roll back to the previous firmware on the next
+# wake, and our latest changes would never actually run on the device.
+safe_mode:
+  boot_is_good_after: 10s
+
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
