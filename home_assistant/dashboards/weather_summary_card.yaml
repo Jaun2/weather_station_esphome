@@ -242,6 +242,9 @@ cards:
         - border-top: 1px solid rgba(255, 255, 255, 0.08)
       grid:
         - grid-template-areas: '"rainfall"'
+      custom_fields:
+        rainfall:
+          - justify-self: start  # left-align the rainfall block; default is center
     custom_fields:
       rainfall: |
         [[[
