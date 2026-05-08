@@ -211,6 +211,7 @@ Sequential — each has its own verification gate. See [`CLAUDE.md`](./CLAUDE.md
 - [x] **Stage 3** — Deep sleep + 5-minute wake cycle + reed-wake + helper-toggle for OTA
 - [x] **Stage 4** — Battery ADC + piecewise LiPo curve + low-voltage cutoff at 3.3 V
 - [ ] **Stage 5** — Solar input + Schottky diode (next; **1N5822** in series with panel +ve into `VIN`)
+- [ ] **Stage 5.5** — Solar charging detection (5:1 voltage divider on `GPIO1` for VIN sense; `Solar Voltage` + `Charging` entities)
 - [ ] **Stage 6** — Mechanical assembly + waterproofing
 - [ ] **Stage 7** — Field deployment + calibration
 - [ ] **Stage 8** — Lightning detector (AS3935)
@@ -239,3 +240,26 @@ Sequential — each has its own verification gate. See [`CLAUDE.md`](./CLAUDE.md
 - The HA package's `Rainfall Rate` and `Pressure/Humidity Change Rate` sensors need a few minutes of accumulated history before they produce meaningful gradients. Rain Likelihood and Rain Intensity will read low/idle at first then settle.
 - The `mm_per_tip` rainfall calibration depends on bucket geometry. Default is `0.6314` (SS4H-RG reference). Recalibrate at Stage 7 with a measured pour: pour a known volume into the funnel slowly, count tips, divide. Edit the substitution in `weather_station.yaml` and re-flash.
 - Rain Session resets when no tips arrive for `session_gap_minutes` (default 60). Tweak the substitution if your rain patterns suggest a different gap.
+
+### Stage 5.5 wiring reference (planned)
+
+The 6 V solar panel measures **7.4 V open-circuit at room temperature** (cold-morning Voc could rise to ~7.8 V with the −0.3 %/°C temperature coefficient). That's outside DFRobot's published 4.5–6 V `VIN` spec but inside the onboard MPPT IC's absolute-max input. Bench-confirm clean behaviour at full charge in bright sun before permanent install.
+
+To detect charging, Stage 5.5 adds a **5:1 voltage divider** from `VIN` (post-Schottky) to `GPIO1`:
+
+```
+   VIN  ───[ 39 kΩ ]───┬───[ 10 kΩ ]───  GND
+                       │
+                    GPIO1 (ADC)
+
+   Optional: 100 nF ceramic from GPIO1 to GND for noise filtering
+   (parallel with the 10 kΩ low-side resistor).
+```
+
+- High-side **39 kΩ** between `VIN` and `GPIO1`.
+- Low-side **10 kΩ** between `GPIO1` and `GND`.
+- `GPIO1` taps the junction. With `attenuation: 12db` the C6's ADC reads up to ~3.3 V; the 5:1 ratio maps 7.8 V → 1.59 V — comfortable headroom.
+
+Lambda multiplier in YAML: **`4.9`** (= `(39 + 10) / 10`). Reports `Solar Voltage` in volts.
+
+A binary template `Charging` derives from `Solar Voltage − Battery Voltage`: when the panel is supplying power, VIN sits ~0.3 V or more above the LiPo's terminal voltage; when the panel is dark or the battery is full and the MPPT is idle, VIN tracks battery voltage closely or falls below it.
