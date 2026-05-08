@@ -82,31 +82,49 @@ cards:
           const charging = get('binary_sensor.weather_station_charging') === 'on';
           const wifi = num('sensor.weather_station_wi_fi_signal_strength');
 
-          // Battery icon scales with charge level
+          // Battery icon at 10% granularity — visual fill indicator.
           let battIcon = 'mdi:battery-alert';
-          if (batt > 90) battIcon = 'mdi:battery';
-          else if (batt > 70) battIcon = 'mdi:battery-80';
-          else if (batt > 50) battIcon = 'mdi:battery-60';
-          else if (batt > 30) battIcon = 'mdi:battery-40';
-          else if (batt > 10) battIcon = 'mdi:battery-20';
+          if (batt >= 95)      battIcon = 'mdi:battery';
+          else if (batt >= 85) battIcon = 'mdi:battery-90';
+          else if (batt >= 75) battIcon = 'mdi:battery-80';
+          else if (batt >= 65) battIcon = 'mdi:battery-70';
+          else if (batt >= 55) battIcon = 'mdi:battery-60';
+          else if (batt >= 45) battIcon = 'mdi:battery-50';
+          else if (batt >= 35) battIcon = 'mdi:battery-40';
+          else if (batt >= 25) battIcon = 'mdi:battery-30';
+          else if (batt >= 15) battIcon = 'mdi:battery-20';
+          else if (batt >= 5)  battIcon = 'mdi:battery-10';
+          else                 battIcon = 'mdi:battery-outline';
+
+          // Wi-Fi icon at 25% granularity — visual bars indicator
+          // (4 bars max — that's the standard for Wi-Fi).
+          let wifiIcon = 'mdi:wifi-strength-outline';
+          if (wifi >= 75)      wifiIcon = 'mdi:wifi-strength-4';
+          else if (wifi >= 55) wifiIcon = 'mdi:wifi-strength-3';
+          else if (wifi >= 35) wifiIcon = 'mdi:wifi-strength-2';
+          else if (wifi >= 15) wifiIcon = 'mdi:wifi-strength-1';
 
           const battColor = batt > 50 ? '#4caf50' : batt > 20 ? '#ff9800' : '#f44336';
           const chargeColor = charging ? '#4caf50' : 'rgba(255,255,255,0.25)';
           const wifiColor = wifi > 50 ? '#4caf50' : wifi > 25 ? '#ff9800' : '#f44336';
 
           return `
-            <div style="display: flex; gap: 14px; align-items: center; font-size: 0.85em; opacity: 0.95;">
-              <span title="Charging">
-                <ha-icon icon="mdi:solar-power-variant" style="--mdc-icon-size: 20px; color: ${chargeColor};"></ha-icon>
-              </span>
-              <span style="display: inline-flex; align-items: center; gap: 4px;" title="Battery">
-                <ha-icon icon="${battIcon}" style="--mdc-icon-size: 20px; color: ${battColor};"></ha-icon>
-                ${batt.toFixed(0)}%
-              </span>
-              <span style="display: inline-flex; align-items: center; gap: 4px;" title="Wi-Fi">
-                <ha-icon icon="mdi:wifi" style="--mdc-icon-size: 20px; color: ${wifiColor};"></ha-icon>
-                ${wifi.toFixed(0)}%
-              </span>
+            <div style="display: flex; gap: 14px; align-items: center;">
+              <ha-icon
+                icon="mdi:solar-power-variant"
+                title="${charging ? 'Charging' : 'Not charging'}"
+                style="--mdc-icon-size: 24px; color: ${chargeColor};"
+              ></ha-icon>
+              <ha-icon
+                icon="${battIcon}"
+                title="Battery: ${batt.toFixed(0)}%"
+                style="--mdc-icon-size: 24px; color: ${battColor};"
+              ></ha-icon>
+              <ha-icon
+                icon="${wifiIcon}"
+                title="Wi-Fi: ${wifi.toFixed(0)}%"
+                style="--mdc-icon-size: 24px; color: ${wifiColor};"
+              ></ha-icon>
             </div>
           `;
         ]]]
