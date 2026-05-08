@@ -66,7 +66,7 @@ cards:
           return `
             <div style="text-align: left;">
               <div style="font-size: 1.3em; font-weight: 600; line-height: 1.2;">Weather Station</div>
-              <div style="opacity: 0.55; font-size: 0.82em; margin-top: 2px;">Vereeniging</div>
+              <div style="opacity: 0.55; font-size: 0.82em; margin-top: 2px;">Vanderbijlpark</div>
             </div>
           `;
         ]]]
@@ -167,27 +167,20 @@ cards:
           const rainprob = num('sensor.weather_station_rain_likelihood_2', 0);
           const fograte = num('sensor.weather_station_fog_probability_2', 0);
 
-          // Weather icon based on visibility + rain
-          const isRaining = get('binary_sensor.weather_station_is_raining') === 'on';
-          let weatherIcon = 'mdi:weather-sunny';
-          let iconColor = '#ffd54f';
-          if (isRaining) {
-            weatherIcon = 'mdi:weather-pouring';
-            iconColor = '#42a5f5';
-          } else if (visibility === 'Fog' || visibility === 'Mist') {
-            weatherIcon = 'mdi:weather-fog';
-            iconColor = '#90a4ae';
-          } else if (visibility === 'Haze') {
-            weatherIcon = 'mdi:weather-hazy';
-            iconColor = '#ffb74d';
-          }
-
-          // Temperature color
+          // Temperature color — used for both the number and the
+          // thermometer icon so they stay visually consistent.
           let tempColor = '#90caf9';
           if (temp >= 30) tempColor = '#ef5350';
           else if (temp >= 20) tempColor = '#ffa726';
           else if (temp >= 10) tempColor = '#ffd54f';
           else if (temp < 0) tempColor = '#7986cb';
+
+          // Thermometer icon (always). We don't have forecast/condition
+          // data, only the current temperature — using a weather-style
+          // icon (sun / cloud / etc.) would be misleading. The
+          // thermometer's colour reflects the actual temperature.
+          const weatherIcon = 'mdi:thermometer';
+          const iconColor = tempColor;
 
           // Rain probability color
           const rainColor = rainprob >= 70 ? '#42a5f5' : rainprob >= 40 ? '#4dd0e1' : 'rgba(255,255,255,0.55)';
