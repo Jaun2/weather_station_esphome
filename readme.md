@@ -159,14 +159,14 @@ A polished Lovelace widget sits in [`home_assistant/dashboards/weather_summary_c
 
 **What you get (top to bottom):**
 
-- **Header bar** — "Weather Station" title plus three system-status icons on the right (charging, battery %, Wi-Fi %). Icons recolor and rescale with the underlying values.
-- **Main weather block** — large temperature with the dominant weather icon (sun / fog / hazy / pouring depending on visibility and rain status). Feels-like temperature and visibility underneath. Stats column on the right: humidity, pressure, rain probability, fog risk.
-- **Rainfall summary** — Today's mm + last 24 h. Dimmed when zero.
+- **Header bar** — "Weather Station" title with subtitle, plus three system-status icons on the right: charging (green when active, dim when idle), battery (11 fill levels at 10 % granularity, color shifts green → orange → red as charge drops), and Wi-Fi (4-bar strength meter, color reflects signal quality). Hover any icon for the actual % value as a tooltip.
+- **Main weather block** — large temperature on the left with a thermometer icon whose color matches the temperature (red when hot, orange/amber for warm, blue when cool, indigo when frosty — visually reinforces the reading without claiming forecast info we don't have). `Feels like` temperature underneath, plus current visibility category. Stats column on the right: humidity %, pressure hPa, rain probability %, fog risk %.
+- **Rainfall summary** — Today's mm + last 24 h, with the icon directly beside the label. Dimmed when there's been no rain.
 - **Conditional warning rows (only render when applicable):**
-  - "It's raining right now" with intensity, only while raining.
-  - Heat warning, only when heat index is meaningful (T ≥ 27 °C and RH ≥ 40 %).
-  - Frost warning, only when frost point applies (T < 0 °C).
-- **Sunrise / Sunset row** — pulled from HA's built-in `sun.sun` entity. Always shown, 24-hour format.
+  - "It's raining right now" with rain intensity (Drizzle / Moderate / Heavy / Storm), only while actively raining.
+  - Heat warning (Caution / Extreme Caution / Danger / Extreme Danger), only when heat index is meaningful (T ≥ 27 °C and RH ≥ 40 %). Background tints orange → red as severity climbs.
+  - Frost warning (Light / Hard / Severe Frost), only when frost point applies (T < 0 °C). Background tints cyan → indigo as severity climbs.
+- **Sunrise / Sunset row** — pulled from HA's built-in `sun.sun` entity. Always shown, 24-hour format. Tap to open the sun entity.
 
 **Tweaks** (in the YAML):
 
