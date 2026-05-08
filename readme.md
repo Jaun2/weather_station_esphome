@@ -128,7 +128,7 @@ Humidity moves on breath = real BME280. Humidity stays flat = BMP280; replace it
 
 ## Sensors
 
-The `weather-station` device card shows ~19 entities after firmware install + HA package, plus 5 HA-side plumbing entities. Each table below has a **What it means** column explaining the metric in plain terms; implementation details are kept brief.
+The `weather-station` device card shows ~21 entities after firmware install + HA package, plus 5 HA-side plumbing entities. Each table below has a **What it means** column explaining the metric in plain terms; implementation details are kept brief.
 
 ### Raw measurements
 
@@ -181,6 +181,8 @@ Health and self-test entities — surface in the device card under "Diagnostic" 
 | `Uptime` | s | Seconds since the last wake from deep sleep. Resets to ~0 every 5 minutes — that's expected, not a fault. |
 | `Battery Voltage` | V | Raw LiPo voltage measured on `GPIO0` through the FireBeetle's onboard 2:1 divider. 4.2 V = full, 3.0 V = empty. The 3.3 V software cutoff fires below this. |
 | `Battery` | % | State-of-charge derived from `Battery Voltage` via a piecewise LiPo discharge curve (4.2 V → 100 %, 3.7 V → 50 %, 3.4 V → 10 %, 3.0 V → 0 %). More accurate near low charge than a single linear interpolation would be. |
+| `Solar Voltage` | V | Voltage at the FireBeetle's `VIN` pin, measured on `GPIO1` through the external 5:1 divider (39 kΩ + 10 kΩ). ~0 V at night, climbs to 5–7 V in sun. Stage 5.5. |
+| `Charging` | on/off | `On` when `Solar Voltage` is at or above `${min_charging_voltage}` V (default 4.5 V) — the minimum the FireBeetle's MPPT needs to actually charge the LiPo. Below the threshold the panel isn't producing enough to charge regardless of battery state. Stage 5.5. |
 
 ### Controls
 
