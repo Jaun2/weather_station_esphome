@@ -97,6 +97,7 @@ If you forget to toggle OFF and try to install while the device is sleeping, the
 
 The package adds:
 - Three `derivative` sensors that compute trend gradients (pressure 3h, humidity 2h, rainfall 15min) from HA's recorder history. The firmware subscribes to these via the native API and uses them for `Rain Likelihood` and `Rain Intensity`.
+- One `statistics` sensor (`Rainfall 24h Source`) that computes a rolling 24-hour rainfall total. The firmware subscribes to it and republishes as `Rainfall 24h`.
 - A `utility_meter` for daily rainfall reset at midnight.
 
 **Steps:**
@@ -111,7 +112,7 @@ The package adds:
 
 3. **Restart Home Assistant.**
 
-After the restart, three plumbing sensors appear in HA: `Pressure Change Rate 3h`, `Humidity Change Rate 2h`, `Rainfall Rate`. They're internal — the firmware reads them back; you don't need them on any dashboard. Hide them via **Settings → Devices & Services → Entities** if they bother you.
+After the restart, four plumbing sensors appear in HA: `Pressure Change Rate 3h`, `Humidity Change Rate 2h`, `Rainfall Rate`, `Rainfall 24h Source`. They're internal — the firmware reads them back; you don't need them on any dashboard. Hide them via **Settings → Devices & Services → Entities** if they bother you.
 
 The `Rainfall Today` utility meter is user-facing — useful for daily-rainfall dashboard cards.
 
@@ -127,7 +128,7 @@ Humidity moves on breath = real BME280. Humidity stays flat = BMP280; replace it
 
 ## Sensors
 
-The `weather-station` device card shows ~17 entities after firmware install + HA package, organised as follows.
+The `weather-station` device card shows ~19 entities after firmware install + HA package, organised as follows.
 
 ### Raw measurements
 
@@ -138,6 +139,7 @@ The `weather-station` device card shows ~17 entities after firmware install + HA
 | `Pressure` | hPa | BME280 — raw (~840 hPa at 1500 m) |
 | `Rain Bucket` | on/off | Reed switch state (mostly diagnostic) |
 | `Rain Tips` | count | Cumulative tip count since install |
+| `Is Raining` | on/off | True if a tip occurred in the last 5 min (`raining_window_minutes` substitution) |
 
 ### Derived metrics — numeric (firmware lambdas)
 
@@ -150,6 +152,7 @@ The `weather-station` device card shows ~17 entities after firmware install + HA
 | `Rain Likelihood` | % | Combines pressure trend, humidity trend, dew-point spread |
 | `Rainfall` | mm | Cumulative since install (`tips × mm_per_tip`) |
 | `Rainfall Session` | mm | Current/most-recent rain event; resets when no tips for 60 min |
+| `Rainfall 24h` | mm | Rolling 24-hour total (window from now); subscribes to `Rainfall 24h Source` in HA |
 | `Feels Like` | °C | Australian Apparent Temperature (Steadman / BOM), no-wind variant |
 
 ### Derived metrics — categorical (firmware text lambdas)
@@ -187,6 +190,7 @@ These compute trend gradients from HA's recorder history and feed them back to t
 | `Pressure Change Rate 3h` | hPa/sec, derivative over 3-hour window — feeds Rain Likelihood |
 | `Humidity Change Rate 2h` | %/sec, derivative over 2-hour window — feeds Rain Likelihood |
 | `Rainfall Rate` | mm/hour, derivative over 15-min window — feeds Rain Intensity |
+| `Rainfall 24h Source` | mm, statistics integration over 24-hour window — feeds the device's `Rainfall 24h` entity |
 | `Rainfall Today` | mm, utility meter resetting at midnight — useful on dashboards |
 
 ## Build stages
