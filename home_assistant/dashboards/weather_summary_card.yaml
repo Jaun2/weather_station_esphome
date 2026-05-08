@@ -248,15 +248,32 @@ cards:
     custom_fields:
       rainfall: |
         [[[
+          const get = (id) => states[id] ? states[id].state : 'unknown';
           const num = (id) => {
-            const s = states[id] ? states[id].state : 'unknown';
+            const s = get(id);
             return (s === 'unknown' || s === 'unavailable') ? NaN : parseFloat(s);
           };
+
+          const session = num('sensor.weather_station_rainfall_session');
           const today = num('sensor.weather_station_rainfall_today');
           const last24h = num('sensor.weather_station_rainfall_24h');
+          const isRaining = get('binary_sensor.weather_station_is_raining') === 'on';
+
           const todayDisp = isNaN(today) ? '--' : today.toFixed(2);
           const last24hDisp = isNaN(last24h) ? '--' : last24h.toFixed(2);
 
+          // Session label: "Session" while actively raining (Is Raining =
+          // on, ie. tip in the last 5 min), otherwise "Last session" — so
+          // the user knows whether the value reflects current rain or a
+          // past event. Hide entirely when session_tips have never
+          // accumulated (rainfall_session = 0, eg. fresh install).
+          const sessionLabel = isRaining ? 'Session' : 'Last session';
+          const sessionPart = (!isNaN(session) && session > 0)
+            ? `${sessionLabel} ${session.toFixed(2)} mm  ·  `
+            : '';
+
+          // Overall row dims when there's been no recent rain. Today is
+          // a good proxy — keeps the row visually quiet on dry days.
           const opacity = today > 0 ? 1 : 0.5;
           const iconColor = today > 5 ? '#42a5f5' : today > 0 ? '#4dd0e1' : 'rgba(255,255,255,0.4)';
 
@@ -265,7 +282,7 @@ cards:
               <ha-icon icon="mdi:water" style="--mdc-icon-size: 22px; color: ${iconColor};"></ha-icon>
               <div style="font-size: 0.95em;">
                 <span style="font-weight: 500;">Rainfall</span>
-                <span style="opacity: 0.75; margin-left: 8px;">Today ${todayDisp} mm  ·  24h ${last24hDisp} mm</span>
+                <span style="opacity: 0.75; margin-left: 8px;">${sessionPart}Today ${todayDisp} mm  ·  24h ${last24hDisp} mm</span>
               </div>
             </div>
           `;
