@@ -266,6 +266,14 @@ sensor:
     entity_id: sensor.weather_station_rainfall_rate
     internal: true
 
+  # Rolling 24-hour rainfall total, computed by HA's `statistics` integration
+  # in the package. Internal here; the device-card-friendly `Rainfall 24h`
+  # template sensor below republishes it under a clean name.
+  - platform: homeassistant
+    id: ha_rainfall_24h
+    entity_id: sensor.weather_station_rainfall_24h_source
+    internal: true
+
   # Battery voltage on GPIO0. Confirmed against the DFRobot DFR1075 wiki
   # Arduino sample which uses analogRead(0) / analogReadMilliVolts(0) —
   # pin 0 == GPIO0 on the ESP32-C6. CLAUDE.md previously said GPIO0 was
@@ -486,6 +494,22 @@ sensor:
     update_interval: 10s
     lambda: |-
       return id(rain_session_tips) * ${mm_per_tip};
+
+  # Rolling 24-hour rainfall total. Wraps the HA `statistics` value so the
+  # device-card name is clean (otherwise the entity would inherit the source
+  # sensor's "Rainfall 24h Source" name). NaN passthrough on first wakes
+  # before HA has pushed a value.
+  - platform: template
+    name: "Rainfall 24h"
+    icon: mdi:weather-pouring
+    unit_of_measurement: "mm"
+    accuracy_decimals: 2
+    state_class: measurement
+    update_interval: 10s
+    lambda: |-
+      float v = id(ha_rainfall_24h).state;
+      if (isnan(v)) return NAN;
+      return v;
 
 text_sensor:
   - platform: template
