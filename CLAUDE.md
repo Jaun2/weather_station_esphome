@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-Building a DIY off-grid weather station that publishes data to Home Assistant. Permanent outdoor deployment in Vereeniging, South Africa (Highveld, ~1500 m altitude, southern hemisphere), running unattended on solar power for years. Tipping-bucket rain gauge plus BME280 temperature/humidity/pressure in a Stevenson screen, with planned expansion to lightning detection, wind speed/direction, soil moisture, and UV.
+Building a DIY off-grid weather station that publishes data to Home Assistant. Permanent outdoor deployment in Vanderbijlpark, South Africa (Vaal Triangle, Highveld, southern hemisphere), running unattended on solar power for years. Tipping-bucket rain gauge plus BME280 temperature/humidity/pressure in a Stevenson screen, with planned expansion to lightning detection, wind speed/direction, soil moisture, and UV.
+
+**Altitude is not hardcoded.** Home Assistant already knows the device's exact location (configured in HA's general settings — latitude, longitude, *and* elevation) and exposes it as `state_attr('zone.home', 'elevation')`. Any computation that needs altitude — currently the planned sea-level pressure, future UV-from-sun-angle approximations, etc. — pulls from there, not from a literal value in YAML or firmware.
 
 **Built on ESPHome.** A previous attempt at custom Arduino/PlatformIO firmware shipped Phases 1–6 (Wi-Fi + MQTT, custom OTA, BME280, reed switch, deep sleep) before being abandoned: the deep-sleep + MQTT + retained-value + OTA interactions accumulated into a debugging swamp that wasn't justified for a hobby project. ESPHome handles all of those concerns natively. The hardware and HA-side template sensor design carry forward unchanged; only the firmware layer changes.
 
@@ -205,7 +207,7 @@ The LiPo discharge curve is non-linear (4.2 V → 100 %, 3.7 V → ~50 %, 3.4 V 
 - BME280 powered off via 3V3_C: ~0 µA.
 - Wake every 5 min for ~10–15 s at ~80 mA average: ~0.4 mAh / hour.
 - ~6 mAh per 15-hour overnight period out of 5000 mAh capacity (~0.12 %).
-- Solar 4.5 W panel produces ~2000–3000 mAh on a sunny Vereeniging day vs ~10 mAh daily consumption — vast surplus.
+- Solar 4.5 W panel produces ~2000–3000 mAh on a sunny Highveld day vs ~10 mAh daily consumption — vast surplus.
 - **Power is NOT a meaningful constraint for this project** with current sensor count.
 - The chip could publish every 30 seconds and still have multi-week autonomy without sun.
 
@@ -242,7 +244,7 @@ Some derived metrics (dew point, heat index, sea-level pressure) can also be com
 
 - `state_attr('zone.home', 'latitude')`
 - `state_attr('zone.home', 'longitude')`
-- Elevation: 1500 m for Vereeniging (hardcode is fine — it doesn't change).
+- Elevation: pull from `state_attr('zone.home', 'elevation')` — HA already knows it from your configured location. Do **not** hardcode an altitude in YAML or templates; relying on HA's value means the project is portable to any location without code edits.
 - `sun.sun` integration provides sunrise, sunset, dawn, dusk, current sun elevation / azimuth — use these for time-of-day-aware logic instead of `now().hour`.
 
 ## Future Expansion (designed-for, not yet built)
@@ -255,7 +257,7 @@ ESPHome has a built-in component for almost everything we'd want to add. The fir
 
 **Architectural changes this introduces:**
 
-- **Power rail change.** The AS3935 must sit on the **always-on 3V3 rail**, not the gated 3V3_C, because power-gating it between wakes would defeat the point — strikes that happen while the ESP32 sleeps would be missed. Adds ~60 µA continuous quiescent draw on top of the C6's ~16 µA. Daily cost ~1.8 mAh; negligible vs ~2000–3000 mAh/day solar harvest on a sunny Vereeniging day.
+- **Power rail change.** The AS3935 must sit on the **always-on 3V3 rail**, not the gated 3V3_C, because power-gating it between wakes would defeat the point — strikes that happen while the ESP32 sleeps would be missed. Adds ~60 µA continuous quiescent draw on top of the C6's ~16 µA. Daily cost ~1.8 mAh; negligible vs ~2000–3000 mAh/day solar harvest on a sunny Highveld day.
 - **Second wake source.** The current dual-wake architecture (timer + reed) becomes triple-wake (timer + reed + AS3935 IRQ). On the C6, ESPHome's `deep_sleep` `wakeup_pin` (or the underlying `esp_deep_sleep_enable_gpio_wakeup` LP-IO API) accepts a bitmask of pins, and ESPHome's `binary_sensor` on the IRQ pin distinguishes which fired via the AS3935's interrupt-source register. Wake-cause branching in our `on_boot` lambda extends from "timer or reed" to "timer or reed or lightning."
 
 **ESPHome integration:** the `as3935_i2c` component (built-in) handles the chip's I²C protocol, event types (lightning strike vs disturber vs noise), distance estimation, and energy reporting. Configure noise floor, watchdog threshold, and spike rejection at the YAML level — surface them as MQTT-set retained config topics or via HA-side service calls so they can be tuned post-deployment without re-flashing.
@@ -297,7 +299,7 @@ Smaller than the lightning detector — both sensors slot cleanly into existing 
 
 **Calibration:**
 - **Speed:** drive a car at known speed in still air holding the cup head out the window, OR sit beside a handheld anemometer for an afternoon. Adjust the m/s-per-Hz factor — 3D-printed cups will not match the Davis 6410 nominal of 1.006 m/s/Hz.
-- **Direction:** with the head fixed in its final mounting, rotate the vane to point at known compass north and record the AS5600 raw reading; that's `WIND_NORTH_OFFSET`. Decide whether to correct for magnetic declination (Vereeniging is ~−21°) in firmware or in an HA template — either works; pick one and document it.
+- **Direction:** with the head fixed in its final mounting, rotate the vane to point at known compass north and record the AS5600 raw reading; that's `WIND_NORTH_OFFSET`. Decide whether to correct for magnetic declination (Vanderbijlpark / Vaal Triangle is ~−21°) in firmware or in an HA template — either works; pick one and document it.
 
 **Risks to budget for:**
 
@@ -323,7 +325,7 @@ Power budget allows comfortably for all of these on top of the lightning + wind 
 Each stage has its own verification gate. Don't advance until the current one is solid.
 
 1. **Stage 0 — Bring-up.** Get an ESPHome YAML compiling and flashing onto the DFR1075 over USB-C. Because there is no dedicated ESPHome/PlatformIO board definition for the DFRobot FireBeetle 2 ESP32-C6, use `board: esp32-c6-devkitc-1` with `variant: esp32c6` and `framework: type: esp-idf` as the generic ESP32-C6 base — the IDF framework has more mature C6 support in ESPHome than `arduino`. **The board ID is just a framework hint — pin mappings on the DFR1075 differ from the generic dev kit and must be set explicitly per the DFRobot wiki ([wiki.dfrobot.com/dfr1075](https://wiki.dfrobot.com/dfr1075/)).** Specifically: I²C on `GPIO19`/`GPIO20`, status LED on `GPIO15`, BOOT button on `GPIO9`, battery ADC on `IO1`, 3V3_C control on `GPIO0` — see the Hardware section. Confirm flash size is 4 MB in the build. Verify Wi-Fi connects (with `fast_connect: True`), native API talks to HA (device shows up in HA's ESPHome integration), `wifi_signal` and `uptime` sensors visible. Test the OTA path (push a tiny config change, see it install via HA). Set up the `weather_station_deep_sleep` HA helper toggle here so you can stay-awake the device for fast iteration in subsequent stages.
-2. **Stage 1 — BME280 over I²C.** Add the `i2c` bus, `bme280_i2c` component on `0x76` or `0x77`. T/H/P sensors appear in HA. Breath test confirms it's a real BME280. Sensible values for Vereeniging at 1500 m (~840 hPa raw).
+2. **Stage 1 — BME280 over I²C.** Add the `i2c` bus, `bme280_i2c` component on `0x76` or `0x77`. T/H/P sensors appear in HA. Breath test confirms it's a real BME280. At Highveld altitude expect raw pressure around ~830–850 hPa (vs ~1013 at sea level) — sea-level-corrected pressure is a planned derived metric that uses HA's `zone.home` elevation.
 3. **Stage 2 — Reed switch tip counting.** `pulse_counter` component on the reed pin, configured for total count. Wave a magnet, count goes up by 1 per pass. HA template sensor multiplies by `mm-per-tip` for rainfall in mm; HA utility meter integrates per-day total.
 4. **Stage 3 — Deep sleep cycle.** `deep_sleep` component with 5-min `sleep_duration` and reed-pin wake. `run_duration` ~15 s (enough for Wi-Fi + native API + publish). Verify on USB power meter: the C6 should hit ~16 µA during sleep. Tip count survives sleep cycles.
 5. **Stage 4 — Battery voltage monitoring.** `adc` sensor on `IO1`, sampled before Wi-Fi connects (use `on_boot` priority). Lambda implements low-voltage cutoff (~3.3 V → indefinite sleep). HA template computes battery percentage from LiPo curve.

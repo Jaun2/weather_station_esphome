@@ -1,6 +1,6 @@
 # Weather Station (ESPHome)
 
-DIY off-grid weather station that publishes data to Home Assistant. Permanent outdoor deployment in Vereeniging, South Africa (Highveld, ~1500 m altitude). Solar-powered, battery-backed, designed to run unattended for years.
+DIY off-grid weather station that publishes data to Home Assistant. Permanent outdoor deployment in Vanderbijlpark, South Africa (Vaal Triangle, Highveld). Solar-powered, battery-backed, designed to run unattended for years. Altitude is sourced at runtime from Home Assistant's `zone.home` elevation, not hardcoded.
 
 ## What it is
 
@@ -170,7 +170,7 @@ A polished Lovelace widget sits in [`home_assistant/dashboards/weather_summary_c
 
 **Tweaks** (in the YAML):
 
-- Change the subtitle (default "Vereeniging") in the header section.
+- Change the subtitle (default "Vanderbijlpark") in the header section.
 - Adjust the temperature color thresholds inside the JS templates (search `tempColor`).
 - Reorder sections by moving their card blocks within `cards:`.
 - Edit the JS templates inside `[[[ ... ]]]` blocks to change content / formatting / colors.
@@ -188,7 +188,7 @@ Direct readings from the BME280 and reed switch — the ground truth that everyt
 |---|---|---|
 | `Temperature` | °C | Air temperature, straight from the BME280. |
 | `Humidity` | % RH | Relative humidity — how saturated the air is with water vapour at the current temperature. 100 % means the air physically cannot hold any more. |
-| `Pressure` | hPa | Atmospheric pressure (uncorrected for altitude). Reads ~840 hPa here at 1500 m vs ~1013 at sea level — the absolute value is location-bound, but day-to-day **changes** matter: falling pressure usually precedes rain. |
+| `Pressure` | hPa | Atmospheric pressure (uncorrected for altitude). Reads lower than sea-level pressure (~1013 hPa) at altitude — at Highveld elevation expect roughly 830–850 hPa. Sea-level-corrected pressure is a planned derived metric that pulls altitude from HA's `zone.home`. The absolute value is location-bound; day-to-day **changes** matter most — falling pressure usually precedes rain. |
 | `Rain Bucket` | on/off | Instantaneous reed-switch state. Flips `on` briefly each time the tipping bucket tips. Mostly diagnostic — `Rain Tips` is the useful metric. |
 | `Rain Tips` | count | Cumulative bucket tips since the last reset. Multiplied by `mm_per_tip` (default 0.6314) to give rainfall. |
 | `Is Raining` | on/off | `On` if at least one tip occurred in the last 5 min, else `Off`. Quick "is it actively raining right now?" flag for automations. Window length is the `raining_window_minutes` substitution. |
