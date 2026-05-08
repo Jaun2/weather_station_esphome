@@ -233,7 +233,9 @@ sensor:
   - platform: wifi_signal
     name: "Wi-Fi Signal"
     id: wifi_signal_dbm
-    update_interval: 60s
+    update_interval: 10s            # 60s never fires inside the 25 s wake;
+                                    # match other diagnostic sensors so we
+                                    # get a fresh sample on every cycle.
 
   - platform: template
     name: "Wi-Fi Signal Strength"
@@ -241,7 +243,8 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 0
     entity_category: diagnostic
-    update_interval: 60s
+    update_interval: 10s            # match wifi_signal_dbm — was 60s, which
+                                    # never fired during a deep-sleep wake.
     lambda: |-
       float dbm = id(wifi_signal_dbm).state;
       if (isnan(dbm)) return NAN;
@@ -252,8 +255,16 @@ sensor:
   - platform: uptime
     name: "Uptime"
 
+  # setup_priority: -200 pushes BME280 setup past WiFi/API stabilisation,
+  # so the first I²C reads happen in a quiet RF environment. Without it,
+  # WiFi association activity coupled onto GPIO19/20 corrupts the initial
+  # transactions, the sensor returns NaN, and that NaN propagates through
+  # every derived sensor (Heat Index, Dew Point, Feels Like, etc.) — they
+  # all read 'Unknown' in HA. Same SS4H-RG pattern documented in CLAUDE.md
+  # and already applied to the battery and solar ADCs.
   - platform: bme280_i2c
     address: 0x76
+    setup_priority: -200
     update_interval: 10s
     temperature:
       name: "Temperature"
