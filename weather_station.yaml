@@ -9,6 +9,8 @@ substitutions:
   low_voltage_cutoff: '3.3'         # below this, force long sleep
   cutoff_sleep_hours: '24'          # how long to sleep when battery is low
   battery_divider_ratio: '2.0'      # DFR1075 IO1 onboard divider (verified, DFRobot wiki)
+  solar_divider_ratio: '4.9'        # External divider on GPIO1: 39 kΩ (high) + 10 kΩ (low) -> (R1+R2)/R2 = 4.9
+  min_charging_voltage: '4.5'       # Solar Voltage at/above this means the panel is producing usable voltage
 
 esphome:
   name: ${device_name}
@@ -183,6 +185,23 @@ binary_sensor:
       return (t.timestamp - id(rain_last_tip_epoch))
              < ${raining_window_minutes} * 60;
 
+  # Solar charging detector. Reads the post-divider VIN voltage and flips
+  # 'on' when it exceeds the minimum required to actually charge the LiPo
+  # via the FireBeetle's MPPT. Below ${min_charging_voltage} V the MPPT
+  # can't sustain charge regardless of battery state, so call that "not
+  # charging" even if the panel is putting out some sub-threshold voltage.
+  # Stage 5.5.
+  - platform: template
+    name: "Charging"
+    id: charging
+    device_class: battery_charging
+    icon: mdi:solar-power-variant
+    entity_category: diagnostic
+    lambda: |-
+      float vin = id(solar_voltage).state;
+      if (isnan(vin)) return {};                                 // unknown until first sample
+      return vin >= ${min_charging_voltage};
+
   - platform: homeassistant
     id: deep_sleep_enable
     entity_id: input_boolean.weather_station_deep_sleep
@@ -333,6 +352,25 @@ sensor:
       if (v >= 3.4f) return 10.0f + (v - 3.4f) * 133.33f;    // [3.4, 3.7] → [10, 50]
       if (v >= 3.0f) return (v - 3.0f) * 25.0f;              // [3.0, 3.4] → [0, 10]
       return 0.0f;
+
+  # Solar (VIN) voltage via the external 5:1 divider on GPIO1.
+  # 39 kΩ (high side) between VIN and GPIO1, 10 kΩ (low side) between GPIO1
+  # and GND, optional 100 nF cap GPIO1 -> GND. Lambda multiplier 4.9 maps
+  # the divided value back to the actual VIN voltage. Stage 5.5.
+  - platform: adc
+    pin: GPIO1
+    name: "Solar Voltage"
+    id: solar_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    device_class: voltage
+    state_class: measurement
+    entity_category: diagnostic
+    setup_priority: -200
+    update_interval: 10s
+    attenuation: 12db
+    filters:
+      - multiply: ${solar_divider_ratio}
 
   # Derived metrics — computed in firmware so they appear on the device card
   # alongside Temperature/Humidity/Pressure. Lambdas reference the BME280's
