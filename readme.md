@@ -198,7 +198,7 @@ Sequential — each has its own verification gate. See [`CLAUDE.md`](./CLAUDE.md
 - [x] **Stage 2** — Reed-switch rain-gauge tip counting + session detection + intensity categorisation
 - [x] **Stage 3** — Deep sleep + 5-minute wake cycle + reed-wake + helper-toggle for OTA
 - [x] **Stage 4** — Battery ADC + piecewise LiPo curve + low-voltage cutoff at 3.3 V
-- [ ] **Stage 5** — Solar input + Schottky diode (next)
+- [ ] **Stage 5** — Solar input + Schottky diode (next; **1N5822** in series with panel +ve into `VIN`)
 - [ ] **Stage 6** — Mechanical assembly + waterproofing
 - [ ] **Stage 7** — Field deployment + calibration
 - [ ] **Stage 8** — Lightning detector (AS3935)
