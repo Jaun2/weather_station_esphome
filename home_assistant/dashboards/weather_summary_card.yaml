@@ -259,8 +259,11 @@ cards:
           const last24h = num('sensor.weather_station_rainfall_24h');
           const isRaining = get('binary_sensor.weather_station_is_raining') === 'on';
 
-          const todayDisp = isNaN(today) ? '--' : today.toFixed(2);
-          const last24hDisp = isNaN(last24h) ? '--' : last24h.toFixed(2);
+          // Round to whole mm on the dashboard for compact display —
+          // the device card shows the precise decimal values for users
+          // who want detail.
+          const todayDisp = isNaN(today) ? '--' : Math.round(today);
+          const last24hDisp = isNaN(last24h) ? '--' : Math.round(last24h);
 
           // Session label: "Session" while actively raining (Is Raining =
           // on, ie. tip in the last 5 min), otherwise "Last session" — so
@@ -269,7 +272,7 @@ cards:
           // accumulated (rainfall_session = 0, eg. fresh install).
           const sessionLabel = isRaining ? 'Session' : 'Last session';
           const sessionPart = (!isNaN(session) && session > 0)
-            ? `${sessionLabel} ${session.toFixed(2)} mm  ·  `
+            ? `${sessionLabel} ${Math.round(session)} mm  ·  `
             : '';
 
           // Overall row dims when there's been no recent rain. Today is
