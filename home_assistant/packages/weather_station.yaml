@@ -82,18 +82,45 @@ sensor:
     unit_time: h
     round: 2
 
-  # Rolling 24-hour rainfall total. state_characteristic: change gives the
-  # delta of the source sensor (Rainfall, cumulative mm) over max_age.
-  # The firmware subscribes to this via platform: homeassistant and
-  # republishes it on the device card as "Rainfall 24h".
-  - platform: statistics
-    name: "Weather Station Rainfall 24h Source"
-    unique_id: weather_station_rainfall_24h_source
-    entity_id: sensor.weather_station_rainfall
-    state_characteristic: change
-    max_age:
+  # Rolling 24-hour rainfall tip count. Counts each on-edge of the device's
+  # reed-switch binary sensor over the last 24 hours. The mm conversion
+  # happens in the `Rainfall 24h Source` template sensor below; the firmware
+  # then subscribes to that and republishes it on the device card as
+  # "Rainfall 24h".
+  #
+  # This replaces an earlier `statistics` + `state_characteristic: change`
+  # approach that did `last - first` over a sliding window of the cumulative
+  # `Rainfall` sensor. That approach went NEGATIVE whenever the firmware's
+  # `rain_tips_total` global was reset within the 24h window (USB-C reflash,
+  # NVS wipe, manual Rain Tips Reset button, etc.) because `change` is not
+  # `total_increasing`-aware. Counting reed events is reset-safe: tip events
+  # live in HA's history independent of the firmware's cumulative counter.
+  - platform: history_stats
+    name: "Weather Station Rainfall 24h Tips"
+    unique_id: weather_station_rainfall_24h_tips
+    entity_id: binary_sensor.weather_station_rain_bucket
+    state: "on"
+    type: count
+    duration:
       hours: 24
-    sampling_size: 8640
+    end: "{{ now() }}"
+
+# Convert the tip count above to mm using the same per-tip calibration the
+# firmware uses (substitutions.mm_per_tip in weather_station.yaml). When
+# recalibrating at Stage 7, update BOTH places.
+template:
+  - sensor:
+      - name: "Weather Station Rainfall 24h Source"
+        unique_id: weather_station_rainfall_24h_source
+        unit_of_measurement: "mm"
+        device_class: precipitation
+        state_class: measurement
+        availability: >-
+          {{ states('sensor.weather_station_rainfall_24h_tips')
+             not in ['unknown', 'unavailable', 'none', None] }}
+        state: >-
+          {{ (states('sensor.weather_station_rainfall_24h_tips')
+              | float(0) * 0.6314) | round(2) }}
 
 # Daily-reset rainfall total. Source is the cumulative `Rainfall` sensor
 # published by the device firmware (with state_class: total_increasing).

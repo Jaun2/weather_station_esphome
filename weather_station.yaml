@@ -328,12 +328,31 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     setup_priority: -200
-    update_interval: 10s        # 'never' was a trap — it truly means never;
-                                # 10 s gives 2 samples per 25 s wake window
-                                # which is more than enough for one publish.
+    update_interval: 2s         # ~10-12 software samples per 25 s wake.
+                                # Cadence chosen so the median filter below
+                                # publishes ONE settled value per wake from
+                                # a full window of 10.
     attenuation: 12db
+    samples: 64                 # hardware oversampling: average 64 ADC
+                                # conversions per software sample. ESP32-C6
+                                # ADCs have ~±20 mV single-sample noise;
+                                # 64 samples drops it to ~±2.5 mV (~√64
+                                # improvement). Cost: ~0.6 ms per sample.
+                                # Doesn't help with WiFi-TX-coincidence
+                                # battery sag (~30-50 mV across a TX burst,
+                                # which is longer than the 0.6 ms hw
+                                # window) — that's what the software median
+                                # below is for.
     filters:
       - multiply: ${battery_divider_ratio}
+      - skip_initial: 1         # drop the first sample after wake; ADC /
+                                # WiFi-connect transient.
+      - median:                 # one publish per wake, taken as the median
+          window_size: 10       # of 10 samples spread across ~20 s. The
+          send_every: 10        # WiFi-TX-coincidence sag dips (a minority
+          send_first_at: 10     # of the 10 samples) get ignored by the
+                                # median; HA records one settled point per
+                                # 5-minute wake instead of a flapping 5.
     on_value:
       then:
         - if:
@@ -359,9 +378,13 @@ sensor:
     device_class: battery
     state_class: measurement
     entity_category: diagnostic
-    update_interval: 10s            # match battery_voltage's cadence so the
-                                    # percentage doesn't lag behind voltage
-                                    # for up to a minute after each wake.
+    update_interval: 30s            # battery_voltage publishes once per
+                                    # wake (~5 min), so anything faster
+                                    # than that just re-reads the same
+                                    # value. 30 s keeps the percentage
+                                    # within one tick of the voltage during
+                                    # the awake window, then idles between
+                                    # wakes.
     lambda: |-
       float v = id(battery_voltage).state;
       if (isnan(v)) return NAN;
@@ -386,10 +409,24 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     setup_priority: -200
-    update_interval: 10s
+    update_interval: 2s          # ~10-12 samples per 25 s wake; same
+                                 # reasoning as battery_voltage above.
     attenuation: 12db
+    samples: 64                  # hardware oversampling — same reasoning as
+                                 # the battery ADC. Reduces single-sample
+                                 # noise from ~±20 mV to ~±2.5 mV.
     filters:
       - multiply: ${solar_divider_ratio}
+      - skip_initial: 1
+      - median:                  # one publish per wake, median of 10.
+          window_size: 10        # Solar voltage CAN change quickly (cloud
+          send_every: 10         # crossing the panel) but deep sleep already
+          send_first_at: 10      # quantises everything to 5-minute
+                                 # granularity, so within-wake responsiveness
+                                 # buys us nothing — the next reading is
+                                 # 5 minutes away regardless. Median rejects
+                                 # the same WiFi-TX-coincidence dips that
+                                 # bother the battery line.
 
   # Derived metrics — computed in firmware so they appear on the device card
   # alongside Temperature/Humidity/Pressure. Lambdas reference the BME280's
