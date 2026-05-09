@@ -365,6 +365,13 @@ sensor:
               - deep_sleep.enter:
                   id: deep_sleep_ctl
                   sleep_duration: ${cutoff_sleep_hours}h
+        # Recompute the Battery percentage immediately when a new voltage
+        # is published. battery_percent's update_interval is `never`, so
+        # this is the only path that triggers it. Required because polling
+        # at any interval >= run_duration (25 s) would never fire during
+        # a wake; polling at < 25 s wastes ticks reading a stale NaN
+        # voltage until the median filter publishes at ~t=22 s.
+        - component.update: battery_percent
 
   # Battery percentage from the LiPo discharge curve. Piecewise linear
   # approximation with anchors at 4.2 V → 100 %, 3.7 V → 50 %, 3.4 V → 10 %,
@@ -378,13 +385,13 @@ sensor:
     device_class: battery
     state_class: measurement
     entity_category: diagnostic
-    update_interval: 30s            # battery_voltage publishes once per
-                                    # wake (~5 min), so anything faster
-                                    # than that just re-reads the same
-                                    # value. 30 s keeps the percentage
-                                    # within one tick of the voltage during
-                                    # the awake window, then idles between
-                                    # wakes.
+    update_interval: never          # driven by battery_voltage's on_value
+                                    # (see above) instead of polling, so the
+                                    # percentage is computed exactly once
+                                    # per wake — at ~t=22 s when the median
+                                    # filter publishes the wake's voltage.
+                                    # Polling at >= 25 s would never fire
+                                    # during the 25 s wake window.
     lambda: |-
       float v = id(battery_voltage).state;
       if (isnan(v)) return NAN;
