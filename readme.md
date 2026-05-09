@@ -97,7 +97,7 @@ If you forget to toggle OFF and try to install while the device is sleeping, the
 
 The package adds:
 - Three `derivative` sensors that compute trend gradients (pressure 3h, humidity 2h, rainfall 15min) from HA's recorder history. The firmware subscribes to these via the native API and uses them for `Rain Likelihood` and `Rain Intensity`.
-- One `statistics` sensor (`Rainfall 24h Source`) that computes a rolling 24-hour rainfall total. The firmware subscribes to it and republishes as `Rainfall 24h`.
+- One `history_stats` sensor (`Rainfall 24h Tips`) that counts reed-switch tip events in the last 24 hours, plus a `template` sensor (`Rainfall 24h Source`) that converts that count to mm. The firmware subscribes to the mm value and republishes as `Rainfall 24h`. (Counting tip events instead of differencing the cumulative `Rainfall` sensor keeps the 24h total reset-safe — a firmware reflash or Rain Tips Reset doesn't make the value go negative.)
 - A `utility_meter` for daily rainfall reset at midnight.
 
 **Steps:**
@@ -112,7 +112,7 @@ The package adds:
 
 3. **Restart Home Assistant.**
 
-After the restart, four plumbing sensors appear in HA: `Pressure Change Rate 3h`, `Humidity Change Rate 2h`, `Rainfall Rate`, `Rainfall 24h Source`. They're internal — the firmware reads them back; you don't need them on any dashboard. Hide them via **Settings → Devices & Services → Entities** if they bother you.
+After the restart, five plumbing sensors appear in HA: `Pressure Change Rate 3h`, `Humidity Change Rate 2h`, `Rainfall Rate`, `Rainfall 24h Tips`, `Rainfall 24h Source`. They're internal — the firmware reads them back; you don't need them on any dashboard. Hide them via **Settings → Devices & Services → Entities** if they bother you.
 
 The `Rainfall Today` utility meter is user-facing — useful for daily-rainfall dashboard cards.
 
@@ -193,14 +193,15 @@ Health and self-test entities — surface in the device card under "Diagnostic" 
 
 ### HA-side plumbing (hidden by default)
 
-These four `derivative` / `statistics` sensors and one `utility_meter` live in Home Assistant because they need historical data — the device sleeps too much to compute rolling windows itself. Several are subscribed back into the firmware via the native API and feed the device-side derived metrics. Hide the internal ones via **Settings → Devices & Services → Entities** if they bother you.
+These `derivative` / `history_stats` / `template` sensors and one `utility_meter` live in Home Assistant because they need historical data — the device sleeps too much to compute rolling windows itself. Several are subscribed back into the firmware via the native API and feed the device-side derived metrics. Hide the internal ones via **Settings → Devices & Services → Entities** if they bother you.
 
 | Entity | Unit | What it means |
 |---|---|---|
 | `Pressure Change Rate 3h` | hPa/s | 3-hour pressure trend (linear-regression derivative). Negative = falling. Internal — feeds `Rain Likelihood` on the device. |
 | `Humidity Change Rate 2h` | %/s | 2-hour humidity trend. Positive = rising. Internal — also feeds `Rain Likelihood`. |
 | `Rainfall Rate` | mm/h | 15-minute rainfall derivative. Internal — feeds `Rain Intensity` categorisation. |
-| `Rainfall 24h Source` | mm | Rolling 24-hour rainfall sum (statistics integration with `state_characteristic: change`). Internal — feeds the device-card `Rainfall 24h` entity. |
+| `Rainfall 24h Tips` | count | Tip events on the reed switch over the last 24 hours (`history_stats` count). Internal — input to `Rainfall 24h Source`. |
+| `Rainfall 24h Source` | mm | `Rainfall 24h Tips` × `mm_per_tip` (template sensor). Internal — feeds the device-card `Rainfall 24h` entity. Reset-safe by construction (counts events, not counter deltas). |
 | `Rainfall Today` | mm | Daily rainfall total resetting at midnight. **User-facing** — useful for dashboard cards. Stays in HA, doesn't round-trip. |
 
 ## Build stages
