@@ -1,6 +1,6 @@
 # Weather Station (ESPHome)
 
-DIY off-grid weather station that publishes data to Home Assistant. Permanent outdoor deployment in Vereeniging, South Africa (Highveld, ~1500 m altitude). Solar-powered, battery-backed, designed to run unattended for years.
+DIY off-grid weather station that publishes data to Home Assistant. Permanent outdoor deployment in Vanderbijlpark, South Africa (Vaal Triangle, Highveld). Solar-powered, battery-backed, designed to run unattended for years. Altitude is sourced at runtime from Home Assistant's `zone.home` elevation, not hardcoded.
 
 ## What it is
 
@@ -21,6 +21,8 @@ secrets.yaml                       # local secrets (gitignored)
 home_assistant/
   packages/
     weather_station.yaml           # HA package — drop into /config/packages/
+  dashboards/
+    weather_summary_card.yaml      # Lovelace card for HA dashboard (Mushroom Cards)
 docs/
   workflow.md                      # detailed flashing / OTA workflow + verification gates
 CLAUDE.md                          # project context, hardware specs, full roadmap
@@ -126,6 +128,54 @@ BMP280 lookalikes are common and have **no humidity sensor** (they report fixed 
 
 Humidity moves on breath = real BME280. Humidity stays flat = BMP280; replace it.
 
+### 8. Install the dashboard summary card (optional)
+
+A polished Lovelace widget sits in [`home_assistant/dashboards/weather_summary_card.yaml`](./home_assistant/dashboards/weather_summary_card.yaml). It bundles current conditions, system health (battery / Wi-Fi / charging), rainfall, sunrise/sunset, and conditional warning rows into one cohesive card — built using `button-card` with custom CSS-grid layouts, with smart conditional sections so it only shows what's relevant.
+
+**Requires:** [HACS](https://hacs.xyz/) plus two custom frontend cards:
+
+- [`button-card`](https://github.com/custom-cards/button-card) — drives the custom layouts.
+- [`stack-in-card`](https://github.com/custom-cards/stack-in-card) — merges sub-sections into one visual block (no internal borders).
+
+**Steps:**
+
+1. **Install both cards via HACS:**
+   - HACS → **Frontend** → search **button-card** → **Download**.
+   - HACS → **Frontend** → search **stack-in-card** → **Download**.
+   - Restart Home Assistant when HACS prompts.
+
+2. **Verify the entity IDs match your HA.** Some entities may have a `_2` suffix in your HA registry if the device was re-added at any point. Filter for `weather_station` in **Developer Tools → States** to confirm IDs. The card YAML uses the IDs that worked for the project's reference setup; if any differ in your HA, search-and-replace before pasting.
+
+3. **Open the card YAML in this repo:** [`home_assistant/dashboards/weather_summary_card.yaml`](./home_assistant/dashboards/weather_summary_card.yaml). Copy everything from the `type: custom:stack-in-card` line down to the end (the comments at the top are documentation, not config).
+
+4. **In Home Assistant:**
+   - Open the dashboard you want the card on.
+   - Click **⋮ menu (top right) → Edit Dashboard**.
+   - Click **+ Add Card** at the bottom of the page.
+   - Scroll the card picker to the bottom and pick **Manual**.
+   - Paste the copied YAML in. **Save**.
+
+5. The widget appears as one unified card. Tap any section for the entity's more-info popup.
+
+**What you get (top to bottom):**
+
+- **Header bar** — "Weather Station" title with subtitle, plus three system-status icons on the right: charging (green when active, dim when idle), battery (11 fill levels at 10 % granularity, color shifts green → orange → red as charge drops), and Wi-Fi (4-bar strength meter, color reflects signal quality). Hover any icon for the actual % value as a tooltip.
+- **Main weather block** — large temperature on the left with a thermometer icon whose color matches the temperature (red when hot, orange/amber for warm, blue when cool, indigo when frosty — visually reinforces the reading without claiming forecast info we don't have). `Feels like` temperature underneath, plus current visibility category. Stats column on the right: humidity %, pressure hPa, rain probability %, fog risk %.
+- **Rainfall summary** — Today's mm + last 24 h, with the icon directly beside the label. Dimmed when there's been no rain.
+- **Conditional warning rows (only render when applicable):**
+  - "It's raining right now" with rain intensity (Drizzle / Moderate / Heavy / Storm), only while actively raining.
+  - Heat warning (Caution / Extreme Caution / Danger / Extreme Danger), only when heat index is meaningful (T ≥ 27 °C and RH ≥ 40 %). Background tints orange → red as severity climbs.
+  - Frost warning (Light / Hard / Severe Frost), only when frost point applies (T < 0 °C). Background tints cyan → indigo as severity climbs.
+- **Sunrise / Sunset row** — pulled from HA's built-in `sun.sun` entity. Always shown, 24-hour format. Tap to open the sun entity.
+
+**Tweaks** (in the YAML):
+
+- Change the subtitle (default "Vanderbijlpark") in the header section.
+- Adjust the temperature color thresholds inside the JS templates (search `tempColor`).
+- Reorder sections by moving their card blocks within `cards:`.
+- Edit the JS templates inside `[[[ ... ]]]` blocks to change content / formatting / colors.
+- The whole widget adapts gracefully to narrow dashboard columns.
+
 ## Sensors
 
 The `weather-station` device card shows ~21 entities after firmware install + HA package, plus 5 HA-side plumbing entities. Each table below has a **What it means** column explaining the metric in plain terms; implementation details are kept brief.
@@ -138,7 +188,7 @@ Direct readings from the BME280 and reed switch — the ground truth that everyt
 |---|---|---|
 | `Temperature` | °C | Air temperature, straight from the BME280. |
 | `Humidity` | % RH | Relative humidity — how saturated the air is with water vapour at the current temperature. 100 % means the air physically cannot hold any more. |
-| `Pressure` | hPa | Atmospheric pressure (uncorrected for altitude). Reads ~840 hPa here at 1500 m vs ~1013 at sea level — the absolute value is location-bound, but day-to-day **changes** matter: falling pressure usually precedes rain. |
+| `Pressure` | hPa | Atmospheric pressure (uncorrected for altitude). Reads lower than sea-level pressure (~1013 hPa) at altitude — at Highveld elevation expect roughly 830–850 hPa. Sea-level-corrected pressure is a planned derived metric that pulls altitude from HA's `zone.home`. The absolute value is location-bound; day-to-day **changes** matter most — falling pressure usually precedes rain. |
 | `Rain Bucket` | on/off | Instantaneous reed-switch state. Flips `on` briefly each time the tipping bucket tips. Mostly diagnostic — `Rain Tips` is the useful metric. |
 | `Rain Tips` | count | Cumulative bucket tips since the last reset. Multiplied by `mm_per_tip` (default 0.6314) to give rainfall. |
 | `Is Raining` | on/off | `On` if at least one tip occurred in the last 5 min, else `Off`. Quick "is it actively raining right now?" flag for automations. Window length is the `raining_window_minutes` substitution. |
