@@ -347,16 +347,17 @@ cards:
           ]]]
 
   # ─────────────────────────────────────────────────────────────────
-  # Conditional: heat warning
+  # Conditional: heat warning. Driven by Feels Like (BOM Apparent
+  # Temperature) rather than Heat Index — AT is defined across all
+  # humidity levels, including the sub-40 % RH dry heat that's
+  # typical here. NWS Heat Index would read "Not Applicable" most of
+  # our summer. Bands are project-specific, not NWS-standard.
   # ─────────────────────────────────────────────────────────────────
   - type: conditional
     conditions:
-      - entity: sensor.weather_station_heat_index_category
-        state_not: Not Applicable
-      - entity: sensor.weather_station_heat_index_category
-        state_not: unknown
-      - entity: sensor.weather_station_heat_index_category
-        state_not: unavailable
+      - condition: numeric_state
+        entity: sensor.weather_station_feels_like_2
+        above: 30
     card:
       type: custom:button-card
       show_name: false
@@ -364,7 +365,7 @@ cards:
       show_icon: false
       tap_action:
         action: more-info
-        entity: sensor.weather_station_heat_index_2
+        entity: sensor.weather_station_feels_like_2
       styles:
         card:
           - padding: 12px 20px
@@ -378,18 +379,19 @@ cards:
       custom_fields:
         content: |
           [[[
-            const cat = states['sensor.weather_station_heat_index_category'].state;
-            const hi = parseFloat(states['sensor.weather_station_heat_index_2'].state).toFixed(1);
-            let color = '#ffc107';
-            if (cat === 'Danger') color = '#f44336';
-            else if (cat === 'Extreme Danger') color = '#b71c1c';
-            else if (cat === 'Extreme Caution') color = '#ff9800';
+            const at = parseFloat(states['sensor.weather_station_feels_like_2'].state);
+            // Bands: 30-35 Hot (amber), 35-40 Very Hot (orange),
+            // 40+ Dangerous Heat (red). Tuned for Highveld summer.
+            let category, color;
+            if (at >= 40)      { category = 'Dangerous Heat'; color = '#b71c1c'; }
+            else if (at >= 35) { category = 'Very Hot';       color = '#f44336'; }
+            else               { category = 'Hot';            color = '#ff9800'; }
             return `
               <div style="display: flex; align-items: center; gap: 12px;">
                 <ha-icon icon="mdi:weather-sunny-alert" style="--mdc-icon-size: 28px; color: ${color};"></ha-icon>
                 <div>
-                  <div style="font-weight: 600;">Heat: ${cat}</div>
-                  <div style="opacity: 0.8; font-size: 0.9em;">Heat index ${hi}°C</div>
+                  <div style="font-weight: 600;">${category}</div>
+                  <div style="opacity: 0.8; font-size: 0.9em;">Feels like ${at.toFixed(1)}°C</div>
                 </div>
               </div>
             `;
