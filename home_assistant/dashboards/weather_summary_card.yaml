@@ -331,6 +331,9 @@ cards:
           - border-top: 1px solid rgba(255, 255, 255, 0.08)
         grid:
           - grid-template-areas: '"content"'
+        custom_fields:
+          content:
+            - justify-self: start  # left-align content; otherwise button-card centres the cell
       custom_fields:
         content: |
           [[[
@@ -376,6 +379,9 @@ cards:
           - border-top: 1px solid rgba(255, 255, 255, 0.08)
         grid:
           - grid-template-areas: '"content"'
+        custom_fields:
+          content:
+            - justify-self: start  # left-align content; otherwise button-card centres the cell
       custom_fields:
         content: |
           [[[
@@ -426,6 +432,9 @@ cards:
           - border-top: 1px solid rgba(255, 255, 255, 0.08)
         grid:
           - grid-template-areas: '"content"'
+        custom_fields:
+          content:
+            - justify-self: start  # left-align content; otherwise button-card centres the cell
       custom_fields:
         content: |
           [[[
