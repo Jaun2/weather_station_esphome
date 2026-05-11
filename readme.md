@@ -337,10 +337,10 @@ Standard 4-pin I²C breakout (VIN, GND, SDA, SCL). Most BME280 modules already h
 | `GND` | `GND` | |
 | `SDA` | `GPIO19` | Silkscreened `19` on the right edge |
 | `SCL` | `GPIO20` | Silkscreened `20` on the right edge |
-| `CSB` | leave unconnected | I²C mode is selected by tying `CSB` HIGH; the breakouts wire this internally |
-| `SDO` | leave unconnected (or tie to GND) | `SDO` floating/GND → address `0x76`; tied to VCC → `0x77`. Most breakouts wire to GND. |
+| `CSB` | `3V3` | **Tie HIGH explicitly.** Selects I²C mode. Leaving `CSB` floating in this build caused intermittent / missing readings — don't trust the breakout to pull it up internally. |
+| `SDO` | `GND` | **Tie LOW explicitly.** Sets the I²C address to `0x76` (matching the YAML). Floating makes the address indeterminate. |
 
-- The YAML uses **address `0x76`**. If your module ships at `0x77` (less common), change the `address:` line in `weather_station.yaml`. The `i2c.scan: true` setting logs whichever address it finds on boot — check the ESPHome logs during the first wake to confirm.
+- The YAML uses **address `0x76`**, which is what `SDO → GND` gives. If you tie `SDO` to `3V3` instead, the address is `0x77` — change the `address:` line in `weather_station.yaml` to match. The `i2c.scan: true` setting logs whichever address it finds on boot — check the ESPHome logs during the first wake to confirm.
 - The BME280 must sit **inside the Stevenson screen** (3D-printed multi-plate radiation shield) so it reads true ambient air temperature, not the inner enclosure or sun-heated surfaces. The cable run from the inner enclosure to the Stevenson screen is the cable run referenced as TBD in [`CLAUDE.md`](./CLAUDE.md) § Open Questions.
 - Keep the BME280 away from the C6 itself — the ESP32-C6 warms up a few °C during WiFi TX, which corrupts temperature readings if the sensor is in thermal contact.
 - Confirm it's a genuine BME280 (not a BMP280 lookalike with no humidity sensor) using the breath test in [§ 7. Verify the BME280 is genuine](#7-verify-the-bme280-is-genuine).
