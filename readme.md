@@ -367,3 +367,43 @@ To detect charging, Stage 5.5 adds a **5:1 voltage divider** from `VIN` (post-Sc
 Lambda multiplier in YAML: **`4.9`** (= `(39 + 10) / 10`). Reports `Solar Voltage` in volts.
 
 A binary template `Charging` derives from `Solar Voltage − Battery Voltage`: when the panel is supplying power, VIN sits ~0.3 V or more above the LiPo's terminal voltage; when the panel is dark or the battery is full and the MPPT is idle, VIN tracks battery voltage closely or falls below it.
+
+## Planned: BME280 satellite device
+
+A planned second deployment moves the BME280 onto a dedicated ESP32-C6 placed in deep shade. The 3D-printed Stevenson screen on the main device introduces an ~8 °C error when direct sun lands on it — multiple revisions of the screen haven't fixed it, and printed PETG isn't equivalent to commercial radiation shields. A shaded satellite sensor sidesteps the radiation-shield problem entirely.
+
+The satellite is battery-only — no solar panel, no charging via the FireBeetle. Cells are charged offline on a bench charger every ~17–20 months. A series Schottky diode between the cells and the FireBeetle's PH2.0 connector physically prevents the onboard charge IC from pushing current back into the cells, so plugging in USB-C (for OTA flashing) is always safe.
+
+### Shopping list
+
+- 1× **DFRobot FireBeetle 2 ESP32-C6** (DFR1075), same model as the main device.
+- 2× **protected 21700 LiPo cells**, matched batch (same brand, same date, same starting voltage when paralleled).
+- 21700 cell holders — one of:
+  - 1× dual holder (Keystone 1042 or equivalent), OR
+  - 2× single PCB-mount holders (Keystone 1043 or equivalent), wired in parallel on the carrier PCB.
+- 1× **series Schottky diode** (charging interlock):
+  - **Through-hole prototype build:** 1N5817 (DO-41, 1 A, ~0.2 V V_F at our load). Easy to hand-solder, plentiful at Communica.
+  - **SMD final build:** PMEG2010EH (SOD-323, 1 A, ~0.3 V V_F) or BAT54 (SOT-23, 200 mA — adequate at our few-mA average load). Either works; PMEG has more headroom.
+- 1× **PH2.0 male connector** with leads, to mate with the FireBeetle's onboard PH2.0 socket. The cell-carrier PCB output terminates in this plug.
+- **BME280 breakout** — the existing bare module (chip + a few resistors + a capacitor, no power LED) is the canonical part for this build. Avoid breakouts with a power LED — they'd dominate the satellite's idle current.
+- **PETG or ASA filament** for the enclosure (UV-resistant, opaque). The Stevenson screen is not used for the satellite — the entire premise is that the device sits in shade.
+- Custom **cell-carrier PCB**: holds the two cells in parallel, integrates the Schottky, terminates in the PH2.0 plug. User-designed (out of scope for this readme).
+
+South African sourcing: Communica, MicroRobotics, and Robotics.org.za stock the FireBeetle, cells, Keystone holders, and both diode form factors.
+
+### Cell-carrier PCB topology
+
+```
+[Cell carrier PCB]                                [FireBeetle 2 ESP32-C6]
+  Cell1 (+)──┬──┬── ▶| ──┬──────────────────────  PH2.0 (+)  (BAT)
+  Cell2 (+)──┘  │ 1N5817 │
+                │  (or SMD equivalent — cathode on FireBeetle side)
+  Cell1 (−)──┬──┴─────────────────────────────────  PH2.0 (−)  (GND)
+  Cell2 (−)──┘
+```
+
+The Schottky's anode goes to the cell side, cathode to the FireBeetle side. Current can only flow cells → FireBeetle; the reverse direction (charge IC → cells) is blocked.
+
+**Trade-off:** the Schottky drops ~0.3 V at our load, so the C6's `Battery Voltage` reads ~0.3 V lower than the actual cell terminal voltage. The 3.3 V software low-voltage cutoff fires when cells are at ~3.6 V instead of ~3.3 V — modest capacity loss (~10–15 %) in exchange for never cycling the cells into the steep bottom of their discharge curve, which is good for calendar life. Estimated runtime: ~17–20 months between charges on 2× 3750 mAh cells.
+
+The full design notes for the satellite (firmware splits, HA package changes, dashboard changes) live in the local-only spec at `docs/superpowers/specs/2026-05-11-bme-satellite-device-design.md` — implementation happens once the parts arrive.
