@@ -381,9 +381,9 @@ The satellite is battery-only — no solar panel, no charging via the FireBeetle
 - 21700 cell holders — one of:
   - 1× dual holder (Keystone 1042 or equivalent), OR
   - 2× single PCB-mount holders (Keystone 1043 or equivalent), wired in parallel on the carrier PCB.
-- 1× **series Schottky diode** (charging interlock):
-  - **Through-hole prototype build:** 1N5817 (DO-41, 1 A, ~0.2 V V_F at our load). Easy to hand-solder, plentiful at Communica.
-  - **SMD final build:** PMEG2010EH (SOD-323, 1 A, ~0.3 V V_F) or BAT54 (SOT-23, 200 mA — adequate at our few-mA average load). Either works; PMEG has more headroom.
+- 1× **series Schottky diode** (charging interlock). Same part on both build variants — V_F at our few-mA load is ~0.2 V regardless of the diode's max-current rating, since junction-area-driven V_F is dominated by current density and ours is tiny:
+  - **Through-hole prototype build:** 1N5822 (DO-41, 3 A, 40 V). Same Schottky already used for the solar input on the main device, so one part covers both positions in the project. Plentiful at Communica.
+  - **SMD final build:** SS34 (SMA package, 3 A, 40 V) — the SMD-equivalent of the 1N5822. SK34 is interchangeable.
 - 1× **PH2.0 male connector** with leads, to mate with the FireBeetle's onboard PH2.0 socket. The cell-carrier PCB output terminates in this plug.
 - **BME280 breakout** — the existing bare module (chip + a few resistors + a capacitor, no power LED) is the canonical part for this build. Avoid breakouts with a power LED — they'd dominate the satellite's idle current.
 - **PETG or ASA filament** for the enclosure (UV-resistant, opaque). The Stevenson screen is not used for the satellite — the entire premise is that the device sits in shade.
@@ -396,8 +396,8 @@ South African sourcing: Communica, MicroRobotics, and Robotics.org.za stock the 
 ```
 [Cell carrier PCB]                                [FireBeetle 2 ESP32-C6]
   Cell1 (+)──┬──┬── ▶| ──┬──────────────────────  PH2.0 (+)  (BAT)
-  Cell2 (+)──┘  │ 1N5817 │
-                │  (or SMD equivalent — cathode on FireBeetle side)
+  Cell2 (+)──┘  │ 1N5822 │
+                │  (or SS34 SMD — cathode on FireBeetle side)
   Cell1 (−)──┬──┴─────────────────────────────────  PH2.0 (−)  (GND)
   Cell2 (−)──┘
 ```
