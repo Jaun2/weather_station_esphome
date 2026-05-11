@@ -294,7 +294,58 @@ Sequential — each has its own verification gate. See [`CLAUDE.md`](./CLAUDE.md
 - The `mm_per_tip` rainfall calibration depends on bucket geometry. Default is `0.6314` (SS4H-RG reference). Recalibrate at Stage 7 with a measured pour: pour a known volume into the funnel slowly, count tips, divide. Edit the substitution in `weather_station.yaml` and re-flash.
 - Rain Session resets when no tips arrive for `session_gap_minutes` (default 60). Tweak the substitution if your rain patterns suggest a different gap.
 
-### Stage 5.5 wiring reference (planned)
+## Wiring reference
+
+Pin assignments on the FireBeetle 2 ESP32-C6 (DFR1075). The silkscreen labels (`IO1`, `A0`, etc.) are DFRobot's own names — the YAML and this section use the chip's GPIO numbers (`GPIO19`, `GPIO20`, etc.); refer to the [DFR1075 wiki](https://wiki.dfrobot.com/dfr1075/) for the silkscreen-to-GPIO mapping if you're following the silkscreen on the board.
+
+| Function | Pin | Rail | Notes |
+|---|---|---|---|
+| Reed switch (rain bucket) | `GPIO4` ↔ `GND` | — | Internal pullup; deep-sleep wake source |
+| BME280 SDA | `GPIO19` | `3V3` (always-on) | I²C bus |
+| BME280 SCL | `GPIO20` | `3V3` (always-on) | I²C bus |
+| Battery voltage sense | `GPIO0` (silkscreen `IO0`) | onboard 2:1 divider | Built-in to the FireBeetle |
+| Solar voltage sense | `GPIO1` (silkscreen `IO1`) | external 5:1 divider | Stage 5.5 |
+| Status LED | `GPIO15` | — | On-board, no wiring needed |
+
+> ⚠️ The BME280 sits on the **always-on `3V3` rail**, not `3V3_C`. `3V3_C` is power-gated by `GPIO0` on the DFR1075, but `GPIO0` is repurposed in this build as the battery ADC input, so `3V3_C` is permanently disabled. Anything that needs to be powered must go on `3V3`.
+
+### Tipping-bucket reed switch (Stage 2)
+
+The reed switch is a normally-open glass tube with two leads. A neodymium magnet on the tipping bucket arm closes the switch briefly each time the bucket tips.
+
+```
+   GPIO4  ──┬── reed ──── GND
+            │
+        (internal pull-up to 3V3 inside the C6 — enabled in YAML)
+```
+
+- One reed lead to **`GPIO4`**, the other to **`GND`**. Polarity doesn't matter — it's a passive switch.
+- **No external pull-up resistor** is needed. The firmware enables the C6's internal pullup on `GPIO4` (see `binary_sensor.Rain Bucket` in `weather_station.yaml`), so the pin idles HIGH and the reed closure pulls it LOW.
+- `GPIO4` is **also configured as a deep-sleep wakeup pin** — a tip during sleep wakes the chip out of cycle and the wake-cause check in `on_boot` increments the tip counter.
+- Software debounce in the YAML (`delayed_off: 100ms`) handles contact bounce. A small ceramic (e.g., 10 nF across the reed leads) is optional and only worth adding if you see spurious double-counts on a scope.
+- Keep the wire run from the reed switch to the FireBeetle short (the reed lives inside the rain gauge body, the FireBeetle in the inner enclosure — typically <15 cm). Twisted-pair or shielded wire is overkill at this length.
+
+A strapping-pin warning on `GPIO4` is expected at boot and harmless — the internal pull-up keeps it HIGH at reset, which is the safe boot mode.
+
+### BME280 (Stage 1)
+
+Standard 4-pin I²C breakout (VIN, GND, SDA, SCL). Most BME280 modules already have on-board pull-up resistors on the I²C lines — if yours doesn't (rare), add **~4.7 kΩ from SDA to 3V3** and **~4.7 kΩ from SCL to 3V3**.
+
+| BME280 pin | FireBeetle pin | Notes |
+|---|---|---|
+| `VIN` (or `VCC`) | `3V3` (always-on rail) | **NOT `3V3_C`** — see warning above |
+| `GND` | `GND` | |
+| `SDA` | `GPIO19` | Silkscreened `19` on the right edge |
+| `SCL` | `GPIO20` | Silkscreened `20` on the right edge |
+| `CSB` | leave unconnected | I²C mode is selected by tying `CSB` HIGH; the breakouts wire this internally |
+| `SDO` | leave unconnected (or tie to GND) | `SDO` floating/GND → address `0x76`; tied to VCC → `0x77`. Most breakouts wire to GND. |
+
+- The YAML uses **address `0x76`**. If your module ships at `0x77` (less common), change the `address:` line in `weather_station.yaml`. The `i2c.scan: true` setting logs whichever address it finds on boot — check the ESPHome logs during the first wake to confirm.
+- The BME280 must sit **inside the Stevenson screen** (3D-printed multi-plate radiation shield) so it reads true ambient air temperature, not the inner enclosure or sun-heated surfaces. The cable run from the inner enclosure to the Stevenson screen is the cable run referenced as TBD in [`CLAUDE.md`](./CLAUDE.md) § Open Questions.
+- Keep the BME280 away from the C6 itself — the ESP32-C6 warms up a few °C during WiFi TX, which corrupts temperature readings if the sensor is in thermal contact.
+- Confirm it's a genuine BME280 (not a BMP280 lookalike with no humidity sensor) using the breath test in [§ 7. Verify the BME280 is genuine](#7-verify-the-bme280-is-genuine).
+
+### Solar voltage divider (Stage 5.5, planned)
 
 The 6 V solar panel measures **7.4 V open-circuit at room temperature** (cold-morning Voc could rise to ~7.8 V with the −0.3 %/°C temperature coefficient). That's outside DFRobot's published 4.5–6 V `VIN` spec but inside the onboard MPPT IC's absolute-max input. Bench-confirm clean behaviour at full charge in bright sun before permanent install.
 
