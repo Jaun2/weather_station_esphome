@@ -223,73 +223,88 @@ cards:
         ]]]
 
   # ─────────────────────────────────────────────────────────────────
-  # Rainfall summary — always shown, dims when zero
+  # Rainfall summary — only shown when there's rain to report.
+  # Hidden when both Today and 24h are zero or missing data, so a
+  # never-zero `Rainfall Session` value doesn't keep the row visible
+  # indefinitely after the only rain event since install.
   # ─────────────────────────────────────────────────────────────────
-  - type: custom:button-card
-    show_name: false
-    show_state: false
-    show_icon: false
-    tap_action:
-      action: more-info
-      entity: sensor.weather_station_rainfall_today
-    styles:
-      card:
-        - padding: 10px 20px
-        - background: transparent
-        - box-shadow: none
-        - border-radius: 0
-        - height: auto
-        - border-top: 1px solid rgba(255, 255, 255, 0.08)
-      grid:
-        - grid-template-areas: '"rainfall"'
+  - type: conditional
+    conditions:
+      - condition: or
+        conditions:
+          - condition: numeric_state
+            entity: sensor.weather_station_rainfall_today
+            above: 0
+          - condition: numeric_state
+            entity: sensor.weather_station_rainfall_24h
+            above: 0
+    card:
+      type: custom:button-card
+      show_name: false
+      show_state: false
+      show_icon: false
+      tap_action:
+        action: more-info
+        entity: sensor.weather_station_rainfall_today
+      styles:
+        card:
+          - padding: 10px 20px
+          - background: transparent
+          - box-shadow: none
+          - border-radius: 0
+          - height: auto
+          - border-top: 1px solid rgba(255, 255, 255, 0.08)
+        grid:
+          - grid-template-areas: '"rainfall"'
+        custom_fields:
+          rainfall:
+            - justify-self: start  # left-align the rainfall block; default is center
       custom_fields:
-        rainfall:
-          - justify-self: start  # left-align the rainfall block; default is center
-    custom_fields:
-      rainfall: |
-        [[[
-          const get = (id) => states[id] ? states[id].state : 'unknown';
-          const num = (id) => {
-            const s = get(id);
-            return (s === 'unknown' || s === 'unavailable') ? NaN : parseFloat(s);
-          };
+        rainfall: |
+          [[[
+            const get = (id) => states[id] ? states[id].state : 'unknown';
+            const num = (id) => {
+              const s = get(id);
+              return (s === 'unknown' || s === 'unavailable') ? NaN : parseFloat(s);
+            };
 
-          const session = num('sensor.weather_station_rainfall_session');
-          const today = num('sensor.weather_station_rainfall_today');
-          const last24h = num('sensor.weather_station_rainfall_24h');
-          const isRaining = get('binary_sensor.weather_station_is_raining') === 'on';
+            const session = num('sensor.weather_station_rainfall_session');
+            const today = num('sensor.weather_station_rainfall_today');
+            const last24h = num('sensor.weather_station_rainfall_24h');
+            const isRaining = get('binary_sensor.weather_station_is_raining') === 'on';
 
-          // Round to whole mm on the dashboard for compact display —
-          // the device card shows the precise decimal values for users
-          // who want detail.
-          const todayDisp = isNaN(today) ? '--' : Math.round(today);
-          const last24hDisp = isNaN(last24h) ? '--' : Math.round(last24h);
+            // Round to whole mm on the dashboard for compact display —
+            // the device card shows the precise decimal values for users
+            // who want detail.
+            const todayDisp = isNaN(today) ? '--' : Math.round(today);
+            const last24hDisp = isNaN(last24h) ? '--' : Math.round(last24h);
 
-          // Session label: "Session" while actively raining (Is Raining =
-          // on, ie. tip in the last 5 min), otherwise "Last session" — so
-          // the user knows whether the value reflects current rain or a
-          // past event. Hide entirely when session_tips have never
-          // accumulated (rainfall_session = 0, eg. fresh install).
-          const sessionLabel = isRaining ? 'Session' : 'Last session';
-          const sessionPart = (!isNaN(session) && session > 0)
-            ? `${sessionLabel}: ${Math.round(session)} mm  ·  `
-            : '';
+            // Session label: "Session" while actively raining (Is Raining =
+            // on, ie. tip in the last 5 min), otherwise "Last session" — so
+            // the user knows whether the value reflects current rain or a
+            // past event. Hide entirely when session_tips have never
+            // accumulated (rainfall_session = 0, eg. fresh install).
+            const sessionLabel = isRaining ? 'Session' : 'Last session';
+            const sessionPart = (!isNaN(session) && session > 0)
+              ? `${sessionLabel}: ${Math.round(session)} mm  ·  `
+              : '';
 
-          // Overall row dims when there's been no recent rain. Today is
-          // a good proxy — keeps the row visually quiet on dry days.
-          const opacity = today > 0 ? 1 : 0.5;
-          const iconColor = today > 5 ? '#42a5f5' : today > 0 ? '#4dd0e1' : 'rgba(255,255,255,0.4)';
+            // Overall row dims when today is zero but 24h still has
+            // rain on the books — keeps the historical reading visible
+            // without competing with current-conditions emphasis.
+            const opacity = today > 0 ? 1 : 0.5;
+            const iconColor = today > 5 ? '#42a5f5' : today > 0 ? '#4dd0e1' : 'rgba(255,255,255,0.4)';
 
-          return `
-            <div style="display: flex; align-items: center; gap: 12px; opacity: ${opacity};">
-              <ha-icon icon="mdi:water" style="--mdc-icon-size: 22px; color: ${iconColor};"></ha-icon>
-              <div style="font-size: 0.95em;">
-                <span style="font-weight: 500;">Rainfall</span>
-                <span style="opacity: 0.75; margin-left: 8px;">${sessionPart}Today: ${todayDisp} mm  ·  24h: ${last24hDisp} mm</span>
+            return `
+              <div style="display: flex; align-items: center; gap: 12px; opacity: ${opacity};">
+                <ha-icon icon="mdi:water" style="--mdc-icon-size: 22px; color: ${iconColor};"></ha-icon>
+                <div style="font-size: 0.95em;">
+                  <span style="font-weight: 500;">Rainfall</span>
+                  <span style="opacity: 0.75; margin-left: 8px;">${sessionPart}Today: ${todayDisp} mm  ·  24h: ${last24hDisp} mm</span>
+                </div>
               </div>
-            </div>
-          `;
-        ]]]
+            `;
+          ]]]
 
   # ─────────────────────────────────────────────────────────────────
   # Conditional: actively raining
